@@ -11,6 +11,7 @@ logging.basicConfig(level=logging.INFO)
 if __name__ == "__main__":
     sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../config')))
 # Now try importing modules with updated sys.path
 try:
     from lib.sensor_reader import read_temperature_humidity, read_soil_moisture
@@ -56,9 +57,11 @@ def check_conditions_and_act():
     else:
         logging.info("Soil is wet. Simulating deactivation of water pump.")
         control_water_pump('off')
-
-    plant_config = config.get_plant_config(config.DEFAULT_PLANT)
     
+    # Get plant configuration
+    plant_config = config.get_plant_config(config.DEFAULT_PLANT)
+    print(f"Plant configuration loaded: {plant_config}")  # Test print
+
     if temperature is not None and humidity is not None:
         if temperature > plant_config['temperature_threshold']:
             logging.warning(f"Temperature is too high: {temperature}°C.")
