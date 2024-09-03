@@ -20,8 +20,7 @@ def on_connect(client, userdata, flags, rc):
     """Callback function when the client connects to the MQTT broker."""
     if rc == 0:
         logging.info("Connected to MQTT Broker successfully.")
-        # Subscribe to topics if needed
-        client.subscribe(config.MQTT_SUBSCRIBE_TOPIC)  # Replace with actual topic if needed
+        client.subscribe(config.MQTT_SUBSCRIBE_TOPIC)
         logging.info(f"Subscribed to topic: {config.MQTT_SUBSCRIBE_TOPIC}")
     else:
         logging.error(f"Failed to connect to MQTT Broker. Return code: {rc}")
@@ -43,7 +42,7 @@ def connect_mqtt():
     """Connects to the MQTT broker using settings from the config file."""
     try:
         client.connect(config.MQTT_BROKER, config.MQTT_PORT, 60)
-        client.loop_start()  # Start the network loop in a separate thread
+        client.loop_start()
         logging.info("MQTT client started and connected.")
     except Exception as e:
         logging.error(f"Failed to connect to MQTT Broker: {e}")

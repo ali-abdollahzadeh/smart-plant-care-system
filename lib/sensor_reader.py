@@ -1,79 +1,81 @@
-import Adafruit_DHT
-import time
-import requests
 import RPi.GPIO as GPIO
+import Adafruit_DHT
 import logging
-import sys
-import os
-
-# Add the relative path to the config directory
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'config')))
-
-# Import configuration settings
-import config
+import time
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 
-# Sensor settings
-sensor = Adafruit_DHT.DHT11
-dht_pin = 21  # GPIO pin for DHT11
+# GPIO pin definitions
+DHT_SENSOR_PIN = 21  # GPIO pin for DHT11 sensor (temperature and humidity)
+MOISTURE_PIN = 17    # GPIO pin for soil moisture sensor
 
-# Soil moisture sensor settings
-moisture_pin = 17  # GPIO pin for the soil moisture sensor
+# Initialize the type of sensor for temperature and humidity
+DHT_SENSOR_TYPE = Adafruit_DHT.DHT11
 
-# Initialize GPIO
 def initialize_gpio():
-    GPIO.setmode(GPIO.BCM)
-    GPIO.setup(moisture_pin, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
-
-def read_soil_moisture():
-    """Reads soil moisture level."""
-    return GPIO.input(moisture_pin)
+    """
+    Initialize GPIO settings for the sensors.
+    Sets the GPIO mode and defines input pins.
+    """
+    GPIO.setmode(GPIO.BCM)  # Use BCM pin numbering
+    GPIO.setup(MOISTURE_PIN, GPIO.IN)  # Set soil moisture pin as input
+    logging.info("GPIO initialized.")
 
 def read_temperature_humidity():
-    """Reads temperature and humidity from DHT11 sensor."""
-    humidity, temperature = Adafruit_DHT.read_retry(sensor, dht_pin)
-    return temperature, humidity
-
-def send_to_thingspeak(temperature, humidity, soil_moisture):
-    """Sends sensor data to ThingSpeak."""
-    payload = {
-        'api_key': config.THINGSPEAK_WRITE_API_KEY,
-        'field1': temperature,
-        'field2': humidity,
-        'field3': soil_moisture
-    }
+    """
+    Reads temperature and humidity from the DHT11 sensor.
+    
+    Returns:
+        tuple: Temperature (°C) and humidity (%) as float values, or (None, None) if read fails.
+    """
     try:
-        response = requests.get(config.THINGSPEAK_URL, params=payload, timeout=10)
-        logging.info(f"Data sent to ThingSpeak: {response.status_code}")
-    except requests.exceptions.RequestException as e:
-        logging.error(f"Failed to send data to ThingSpeak: {e}")
+        humidity, temperature = Adafruit_DHT.read_retry(DHT_SENSOR_TYPE, DHT_SENSOR_PIN)
+        if humidity is not None and temperature is not None:
+            logging.info(f"Temperature: {temperature}°C, Humidity: {humidity}%")
+            return temperature, humidity
+        else:
+            logging.warning("Failed to get reading from DHT sensor.")
+            return None, None
+    except Exception as e:
+        logging.error(f"Error reading temperature and humidity: {e}")
+        return None, None
 
-def main():
-    """Main function to read sensors and send data."""
-    initialize_gpio()
-
+def read_soil_moisture():
+    """
+    Reads soil moisture level from the digital soil moisture sensor.
+    
+    Returns:
+        int: 0 if wet, 1 if dry (assuming typical digital soil moisture sensor behavior).
+    """
     try:
+        moisture_level = GPIO.input(MOISTURE_PIN)
+        logging.info(f"Soil moisture level: {'Dry' if moisture_level == 1 else 'Wet'}")
+        return moisture_level
+    except Exception as e:
+        logging.error(f"Error reading soil moisture: {e}")
+        return None
+
+if __name__ == "__main__":
+    try:
+        # Initialize GPIO settings
+        initialize_gpio()
+
+        # Continuously read sensor data for testing purposes
         while True:
-            # Read sensor data
             temperature, humidity = read_temperature_humidity()
-            moisture = read_soil_moisture()
-            soil_moisture_value = 800 if moisture == 1 else 200
-
-            if humidity is not None and temperature is not None:
-                logging.info(f'Temp={temperature}*C  Humidity={humidity}%  Soil Moisture={soil_moisture_value}')
-                send_to_thingspeak(temperature, humidity, soil_moisture_value)
-            else:
-                logging.warning('Failed to get DHT11 reading. Try again!')
-
-            time.sleep(config.DATA_SEND_INTERVAL)  # Configurable interval from config.py
+            soil_moisture = read_soil_moisture()
+            
+            if temperature is not None and humidity is not None:
+                print(f"Temperature: {temperature}°C, Humidity: {humidity}%")
+            
+            if soil_moisture is not None:
+                print(f"Soil Moisture Level: {'Dry' if soil_moisture == 1 else 'Wet'}")
+            
+            time.sleep(10)  # Wait for 10 seconds before next reading
 
     except KeyboardInterrupt:
         logging.info("Program stopped by user.")
     finally:
-        GPIO.cleanup()
+        GPIO.cleanup()  # Clean up GPIO settings before exiting
         logging.info("GPIO cleanup done.")
-
-if __name__ == "__main__":
-    main()

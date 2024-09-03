@@ -29,11 +29,9 @@ def send_to_thingspeak(temperature, humidity, soil_moisture):
     }
 
     try:
-        response = requests.get(config.THINGSPEAK_URL, params=payload, timeout=10)
-        if response.status_code == 200:
-            logging.info(f"Data sent to ThingSpeak: {response.status_code}")
-        else:
-            logging.error(f"Failed to send data to ThingSpeak. HTTP Status: {response.status_code}")
+        response = requests.post(config.THINGSPEAK_URL, params=payload, timeout=10)  # Changed to POST for data updates
+        response.raise_for_status()  # Raises HTTPError for bad responses
+        logging.info(f"Data sent to ThingSpeak successfully. Response: {response.status_code}")
     except requests.exceptions.RequestException as e:
         logging.error(f"Error sending data to ThingSpeak: {e}")
 

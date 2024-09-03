@@ -20,45 +20,41 @@ except ModuleNotFoundError:
     from sensor_reader import read_temperature_humidity, read_soil_moisture
     import config
 
-# Define GPIO pins for actuators
-WATER_PUMP_PIN = 18  # Example GPIO pin for water pump
-LIGHT_PIN = 23       # Example GPIO pin for light
+# Define GPIO pins for actuators and sensors
+MOISTURE_PIN = 17  # Example GPIO pin for soil moisture sensor
 
-# Initialize GPIO for actuators
+# Initialize GPIO for actuators and sensors
 def initialize_gpio():
     GPIO.setmode(GPIO.BCM)
-    GPIO.setup(WATER_PUMP_PIN, GPIO.OUT)
-    GPIO.setup(LIGHT_PIN, GPIO.OUT)
+    GPIO.setup(MOISTURE_PIN, GPIO.IN)  # Ensure moisture sensor pin is set up as input
 
+# Simulated function for controlling water pump
 def control_water_pump(action):
     if action == 'on':
-        GPIO.output(WATER_PUMP_PIN, GPIO.HIGH)
-        logging.info("Water pump turned ON.")
+        logging.info("Simulated: Water pump turned ON.")
     elif action == 'off':
-        GPIO.output(WATER_PUMP_PIN, GPIO.LOW)
-        logging.info("Water pump turned OFF.")
+        logging.info("Simulated: Water pump turned OFF.")
     else:
         logging.error("Invalid action for water pump control.")
 
+# Simulated function for controlling light
 def control_light(action):
     if action == 'on':
-        GPIO.output(LIGHT_PIN, GPIO.HIGH)
-        logging.info("Light turned ON.")
+        logging.info("Simulated: Light turned ON.")
     elif action == 'off':
-        GPIO.output(LIGHT_PIN, GPIO.LOW)
-        logging.info("Light turned OFF.")
+        logging.info("Simulated: Light turned OFF.")
     else:
         logging.error("Invalid action for light control.")
 
 def check_conditions_and_act():
     temperature, humidity = read_temperature_humidity()
-    soil_moisture = read_soil_moisture()
+    soil_moisture = read_soil_moisture()  # This should now work correctly with proper GPIO setup
 
     if soil_moisture == 1:  # Assuming 1 means dry
-        logging.info("Soil is dry. Activating water pump.")
+        logging.info("Soil is dry. Simulating activation of water pump.")
         control_water_pump('on')
     else:
-        logging.info("Soil is wet. Deactivating water pump.")
+        logging.info("Soil is wet. Simulating deactivation of water pump.")
         control_water_pump('off')
 
     plant_config = config.get_plant_config(config.DEFAULT_PLANT)
@@ -70,7 +66,7 @@ def check_conditions_and_act():
             logging.warning(f"Humidity is too low: {humidity}%.")
 
 if __name__ == "__main__":
-    initialize_gpio()
+    initialize_gpio()  # Ensure GPIO is initialized before running control loop
     try:
         while True:
             check_conditions_and_act()
