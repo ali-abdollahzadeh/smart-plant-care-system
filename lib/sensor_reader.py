@@ -3,14 +3,11 @@ import Adafruit_DHT
 import logging
 import time
 
-# Configure logging
 logging.basicConfig(level=logging.INFO)
 
-# GPIO pin definitions
 DHT_SENSOR_PIN = 21  # GPIO pin for DHT11 sensor (temperature and humidity)
 MOISTURE_PIN = 17    # GPIO pin for soil moisture sensor
 
-# Initialize the type of sensor for temperature and humidity
 DHT_SENSOR_TYPE = Adafruit_DHT.DHT11
 
 def initialize_gpio():
@@ -18,8 +15,8 @@ def initialize_gpio():
     Initialize GPIO settings for the sensors.
     Sets the GPIO mode and defines input pins.
     """
-    GPIO.setmode(GPIO.BCM)  # Use BCM pin numbering
-    GPIO.setup(MOISTURE_PIN, GPIO.IN)  # Set soil moisture pin as input
+    GPIO.setmode(GPIO.BCM)  
+    GPIO.setup(MOISTURE_PIN, GPIO.IN)  
     logging.info("GPIO initialized.")
 
 def read_temperature_humidity():
@@ -42,12 +39,6 @@ def read_temperature_humidity():
         return None, None
 
 def read_soil_moisture():
-    """
-    Reads soil moisture level from the digital soil moisture sensor.
-    
-    Returns:
-        int: 0 if wet, 1 if dry (assuming typical digital soil moisture sensor behavior).
-    """
     try:
         moisture_level = GPIO.input(MOISTURE_PIN)
         logging.info(f"Soil moisture level: {'Dry' if moisture_level == 1 else 'Wet'}")
@@ -58,10 +49,8 @@ def read_soil_moisture():
 
 if __name__ == "__main__":
     try:
-        # Initialize GPIO settings
         initialize_gpio()
 
-        # Continuously read sensor data for testing purposes
         while True:
             temperature, humidity = read_temperature_humidity()
             soil_moisture = read_soil_moisture()

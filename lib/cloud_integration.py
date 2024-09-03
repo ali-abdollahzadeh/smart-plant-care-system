@@ -2,13 +2,14 @@ import requests
 import logging
 import sys
 import os
+import time  # Import time for sleep functionality
 
 # Add the relative path to the config directory
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'config')))
-
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 # Import configuration settings
 import config
-
+from lib.sensor_reader import read_temperature_humidity, read_soil_moisture
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 
@@ -21,6 +22,10 @@ def send_to_thingspeak(temperature, humidity, soil_moisture):
         humidity (float): Humidity value to send.
         soil_moisture (int): Soil moisture value to send.
     """
+    temperature, humidity = read_temperature_humidity()
+    soil_moisture = 200  # For now, this is hardcoded. You can update this to read actual values if needed.
+            
+    # Prepare the data payload
     payload = {
         'api_key': config.THINGSPEAK_WRITE_API_KEY,
         'field1': temperature,
@@ -29,7 +34,7 @@ def send_to_thingspeak(temperature, humidity, soil_moisture):
     }
 
     try:
-        response = requests.post(config.THINGSPEAK_URL, params=payload, timeout=10)  # Changed to POST for data updates
+        response = requests.post(config.THINGSPEAK_URL, params=payload, timeout=10)
         response.raise_for_status()  # Raises HTTPError for bad responses
         logging.info(f"Data sent to ThingSpeak successfully. Response: {response.status_code}")
     except requests.exceptions.RequestException as e:
@@ -67,10 +72,25 @@ def read_from_thingspeak():
         return None
 
 if __name__ == "__main__":
-    # Test sending data
-    send_to_thingspeak(25.5, 60.0, 200)
+    # Set a delay time (in seconds) between sending data. For example, 60 seconds.
+    delay_time = 60
 
-    # Test reading data
-    data = read_from_thingspeak()
-    if data:
-        print(f"Latest data: {data}")
+    while True:
+        try:
+            # Get sensor readings and send them to ThingSpeak
+            temperature, humidity = read_temperature_humidity()
+            soil_moisture = read_soil_moisture()  # Replace the hardcoded value with actual reading
+
+            if temperature is not None and humidity is not None:
+                send_to_thingspeak(temperature, humidity, soil_moisture)
+            else:
+                logging.error("Failed to read sensor data.")
+
+            # Wait before sending the next set of data
+            time.sleep(delay_time)
+        
+        except KeyboardInterrupt:
+            logging.info("Program stopped by user.")
+            break  # Exit the loop when the user interrupts the program
+        except Exception as e:
+            logging.error(f"An unexpected error occurred: {e}")
