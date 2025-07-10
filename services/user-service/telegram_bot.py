@@ -320,6 +320,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not user_row:
         user_id = add_user(telegram_id, name)
         logging.info(f"[NOTIFY] Registered new user: telegram_id={telegram_id}, name={name}, user_id={user_id}")
+        await update.message.reply_text("✅ You have been registered! Please wait while we assign you a plant.")
     else:
         user_id = user_row[0]
         logging.info(f"[NOTIFY] Existing user: telegram_id={telegram_id}, name={name}, user_id={user_id}")
@@ -328,13 +329,17 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_plants = get_plants_for_user(user_id)
     if not user_plants:
         all_plants = get_all_plants()
+        assigned = False
         for plant in all_plants:
             if not plant[6]:  # plant[6] is user_id
-                # Assign this plant to the user
                 from db import assign_plant_to_user
                 assign_plant_to_user(user_id, plant[0])
                 logging.info(f"[NOTIFY] Auto-assigned plant {plant[0]} to user {user_id} (telegram_id={telegram_id})")
+                await update.message.reply_text(f"🌱 Plant '{plant[1]}' has been assigned to you!")
+                assigned = True
                 break
+        if not assigned:
+            await update.message.reply_text("No available plants to assign at the moment. Please contact an admin.")
     # Ask user if they want to join
     join_keyboard = ReplyKeyboardMarkup(
         [[KeyboardButton("Join Smart Plant System")]],
@@ -366,6 +371,7 @@ async def show_plant_grid(update, context):
         plants = [p for p in all_plants if p.get('user_id') == user_id]
     except Exception as e:
         logging.error(f"Failed to fetch plants from catalogue-service: {e}")
+        await update.message.reply_text("❌ Error fetching your plants. Please try again later or contact support.")
         plants = []
     if not plants:
         await update.message.reply_text("You have no plants assigned yet. Please wait for an admin to assign a plant to you.")
@@ -459,6 +465,9 @@ def get_plant_detail(plant_id):
 
 async def show_plant_detail(update: Update, context: ContextTypes.DEFAULT_TYPE, plant_id):
     plant, sensor_data = get_plant_detail(plant_id)
+    if not plant or not plant.get('name'):
+        await context.bot.send_message(chat_id=update.effective_chat.id, text="❌ Could not find plant details. Please go back and select another plant.")
+        return
     # Fetch actuator state for accurate watering/lighting
     try:
         actuator_resp = requests.get(f"{SENSOR_API_URL}?plant_id={plant_id}", timeout=5)
@@ -502,6 +511,7 @@ async def show_plant_detail(update: Update, context: ContextTypes.DEFAULT_TYPE, 
         else:
             await context.bot.send_message(chat_id=update.effective_chat.id, text=msg, reply_markup=reply_markup, parse_mode='HTML')
             print(f"Telegram editMessageText error: {e}")
+            await context.bot.send_message(chat_id=update.effective_chat.id, text="❌ An error occurred displaying plant details. Please try again.")
 
 def get_plant_status(plant, sensor_data):
     # Compare sensor_data to plant thresholds
