@@ -1,0 +1,5 @@
+# Catalogue Service Config
+# Most settings are loaded from shared/config/global_config.yaml
+# You can override or add service-specific settings here.
+
+# Example: database_path: /data/catalogue.db
