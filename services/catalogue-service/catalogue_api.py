@@ -5,7 +5,7 @@ import os
 import json
 
 app = Flask(__name__)
-DB_PATH = os.environ.get("CATALOGUE_DB_PATH", "catalogue.db")
+DB_PATH = os.environ.get("CATALOGUE_DB_PATH", "/app/catalogue_data.db")
 
 def get_db():
     conn = sqlite3.connect(DB_PATH)
