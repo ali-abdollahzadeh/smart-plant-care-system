@@ -1,0 +1,7 @@
+requests
+# requests required for REST calls to actuator API
+python-telegram-bot
+paho-mqtt
+PyYAML
+Flask
+ 
