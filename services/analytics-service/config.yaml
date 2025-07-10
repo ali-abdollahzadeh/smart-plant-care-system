@@ -1,0 +1,8 @@
+# Analytics Service Config
+# Most settings are loaded from shared/config/global_config.yaml
+# You can override or add service-specific settings here.
+
+report:
+  interval_days: 7  # Weekly report
+
+RUN pip install flask
