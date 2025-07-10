@@ -1,0 +1,5 @@
+# Cloud Adapter Service Config
+# Most settings are loaded from shared/config/global_config.yaml
+# You can override or add service-specific settings here.
+
+# Example: thingspeak_update_interval: 60  # seconds
