@@ -1,0 +1,11 @@
+# Sensor Service Config
+# Most settings are loaded from shared/config/global_config.yaml
+# You can override or add service-specific settings here.
+
+sensor_pins:
+  dht_pin: 21
+  moisture_pin: 17
+
+# Uncomment to override simulation mode locally
+# simulation:
+#   enabled: true

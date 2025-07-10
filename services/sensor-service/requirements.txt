@@ -1,0 +1,5 @@
+paho-mqtt==1.6.1
+PyYAML
+requests 
+Flask 
+# Flask required for actuator REST API 
