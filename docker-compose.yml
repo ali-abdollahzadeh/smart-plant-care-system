@@ -1,0 +1,101 @@
+version: '3.8'
+services:
+  mqtt-broker:
+    image: eclipse-mosquitto:2.0
+    container_name: mqtt-broker
+    ports:
+      - "1883:1883"
+    volumes:
+      - ./docker/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+    restart: unless-stopped
+
+  sensor-service:
+    build:
+      context: ./services/sensor-service
+      dockerfile: Dockerfile
+    container_name: sensor-service
+    volumes:
+      - ./shared/config:/app/shared/config:ro
+    environment:
+      - CONFIG_PATH=/app/shared/config/global_config.yaml
+    restart: unless-stopped
+    depends_on:
+      - mqtt-broker
+    ports:
+      - "5002:5002"
+
+  analytics-service:
+    build:
+      context: ./services/analytics-service
+      dockerfile: Dockerfile
+    container_name: analytics-service
+    ports:
+      - "5003:5000"
+    volumes:
+      - ./shared/config:/app/shared/config:ro
+    environment:
+      - CONFIG_PATH=/app/shared/config/global_config.yaml
+    restart: unless-stopped
+    depends_on:
+      - mqtt-broker
+
+  catalogue-service:
+    build:
+      context: ./services/catalogue-service
+      dockerfile: Dockerfile
+    container_name: catalogue-service
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./shared/config:/app/shared/config:ro
+      - catalogue_db:/app/catalogue_data.db
+    environment:
+      - CONFIG_PATH=/app/shared/config/global_config.yaml
+    restart: unless-stopped
+
+  cloud-adapter-service:
+    build:
+      context: ./services/cloud-adapter-service
+      dockerfile: Dockerfile
+    container_name: cloud-adapter-service
+    ports:
+      - "5001:5001"
+    volumes:
+      - ./shared/config:/app/shared/config:ro
+    environment:
+      - CONFIG_PATH=/app/shared/config/global_config.yaml
+    restart: unless-stopped
+    depends_on:
+      - mqtt-broker
+
+  user-service:
+    build:
+      context: ./services/user-service
+      dockerfile: Dockerfile
+    container_name: user-service
+    volumes:
+      - ./shared/config:/app/shared/config:ro
+      - user_db:/app/user_data.db
+    environment:
+      - CONFIG_PATH=/app/shared/config/global_config.yaml
+    restart: unless-stopped
+    depends_on:
+      - mqtt-broker
+    ports:
+      - "5500:5500"
+
+  nodered:
+    image: nodered/node-red:3.1
+    container_name: nodered
+    ports:
+      - "1880:1880"
+    volumes:
+      - nodered_data:/data
+    restart: unless-stopped
+    depends_on:
+      - mqtt-broker
+
+volumes:
+  nodered_data:
+  catalogue_db:
+  user_db: 
