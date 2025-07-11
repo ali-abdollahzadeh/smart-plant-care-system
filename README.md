@@ -3,7 +3,7 @@
 Project for the course Programming for IoT Applications at Politecnico di Torino, academic year 2023-2024.
 
 ## Overview
-
+![Use case Diagram](old_structure/docs/use_case_diagram.jpg)
 The Smart Plant Care System is a modular, microservices-based IoT solution for automating and optimizing plant care. It leverages sensors, a Raspberry Pi, cloud services, and user interfaces to monitor and manage plant health. The system provides real-time monitoring, automated control, historical analytics, and user notifications via Telegram and dashboards.
 
 ## Architecture
