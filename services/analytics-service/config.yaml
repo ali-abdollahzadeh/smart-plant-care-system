@@ -4,5 +4,3 @@
 
 report:
   interval_days: 7  # Weekly report
-
-RUN pip install flask

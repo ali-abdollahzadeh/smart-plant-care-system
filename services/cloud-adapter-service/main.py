@@ -7,6 +7,7 @@ from flask import Flask
 from mqtt_subscriber import MqttToThingSpeakBridge
 import rest_adapter
 
+
 logging.basicConfig(level=logging.INFO, format='[%(asctime)s] %(levelname)s: %(message)s')
 
 CONFIG_PATH = os.environ.get("CONFIG_PATH", "../shared/config/global_config.yaml")

@@ -22,7 +22,7 @@ import threading
 import time
 import db
 from telegram.error import BadRequest
-from db import add_user, get_user_by_telegram_id, get_plants_for_user, get_all_plants
+from db import add_user, get_user_by_telegram_id, get_plants_for_user, get_all_plants, assign_plant_to_user
 
 CONFIG_PATH = os.environ.get("CONFIG_PATH", "../shared/config/global_config.yaml")
 with open(CONFIG_PATH, 'r') as f:
@@ -38,25 +38,37 @@ def get_or_create_user(chat_id, username=None, display_name=None):
     # Use Telegram username for lookup/creation
     lookup_username = username or str(chat_id)
     try:
-        resp = requests.get(f"{CATALOGUE_API_URL}/users")
-        users = resp.json()
-        for user in users:
-            if user.get('username') == lookup_username:
-                return user['id']
-    except Exception:
-        pass
-    # If not found, create user in catalogue-service
-    payload = {
-        'username': lookup_username,
-        'display_name': display_name or lookup_username
-    }
-    try:
-        resp = requests.post(f"{CATALOGUE_API_URL}/users", json=payload)
+        # First try to get all users
+        resp = requests.get(f"{CATALOGUE_API_URL}/users", timeout=5)
+        if resp.status_code != 200:
+            logging.error(f"[CATALOGUE] Failed to get users: {resp.status_code} {resp.text}")
+        else:
+            users = resp.json()
+            for user in users:
+                if user.get('username') == lookup_username:
+                    logging.info(f"[CATALOGUE] Found existing user: {user}")
+                    return user['id']
+        
+        # If not found, create user in catalogue-service
+        payload = {
+            'username': lookup_username,
+            'display_name': display_name or lookup_username
+        }
+        logging.info(f"[CATALOGUE] Creating new user with payload: {payload}")
+        resp = requests.post(f"{CATALOGUE_API_URL}/users", json=payload, timeout=5)
+        
         if resp.status_code == 201:
             user = resp.json()
+            logging.info(f"[CATALOGUE] Successfully created user: {user}")
             return user['id']
-    except Exception:
-        pass
+        else:
+            logging.error(f"[CATALOGUE] Failed to create user: {resp.status_code} {resp.text}")
+    except requests.exceptions.Timeout:
+        logging.error(f"[CATALOGUE] Timeout connecting to catalogue service")
+    except requests.exceptions.ConnectionError:
+        logging.error(f"[CATALOGUE] Failed to connect to catalogue service")
+    except Exception as e:
+        logging.error(f"[CATALOGUE] Unexpected error: {str(e)}")
     return None
 
 def get_user_id_for_chat(chat_id, username=None, display_name=None):
@@ -155,19 +167,110 @@ def load_user_plant_assignments():
         # Get all users with their telegram_id
         c.execute('SELECT id, telegram_id FROM users')
         users = {str(row[0]): row[1] for row in c.fetchall() if row[1]}
+        logging.info(f"[NOTIFY] Found users in local DB: {users}")
         # Get all plants with user assignments
         c.execute('SELECT id, user_id FROM plants WHERE user_id IS NOT NULL')
-        for plant_id, user_id in c.fetchall():
+        plant_assignments = c.fetchall()
+        logging.info(f"[NOTIFY] Found plant assignments in local DB: {plant_assignments}")
+        for plant_id, user_id in plant_assignments:
             user_id_str = str(user_id)
             if user_id_str in users:
                 telegram_id = users[user_id_str]
                 try:
                     user_plant_assignments[int(telegram_id)] = plant_id
-                except Exception:
-                    logging.warning(f"[NOTIFY] Skipping user_id={user_id} with invalid telegram_id={telegram_id}")
+                    logging.info(f"[NOTIFY] Added assignment: telegram_id={telegram_id}, plant_id={plant_id}")
+                except Exception as e:
+                    logging.warning(f"[NOTIFY] Skipping user_id={user_id} with invalid telegram_id={telegram_id}: {e}")
+            else:
+                logging.warning(f"[NOTIFY] User {user_id} not found in users table")
     logging.info(f"[NOTIFY] Loaded user_plant_assignments from DB: {user_plant_assignments}")
 
+# Sync assignments from catalogue-service to local DB
+def sync_assignments_from_catalogue():
+    try:
+        # Get all users from catalogue-service
+        users_resp = requests.get(f"{CATALOGUE_API_URL}/users", timeout=5)
+        if users_resp.status_code != 200:
+            logging.error(f"[SYNC] Failed to get users from catalogue: {users_resp.status_code}")
+            return
+        catalogue_users = users_resp.json()
+        logging.info(f"[SYNC] Found {len(catalogue_users)} users in catalogue")
+        
+        # Get all plants from catalogue-service
+        plants_resp = requests.get(f"{CATALOGUE_API_URL}/plants", timeout=5)
+        if plants_resp.status_code != 200:
+            logging.error(f"[SYNC] Failed to get plants from catalogue: {plants_resp.status_code}")
+            return
+        catalogue_plants = plants_resp.json()
+        logging.info(f"[SYNC] Found {len(catalogue_plants)} plants in catalogue")
+        
+        # For each user in catalogue, ensure they exist in local DB
+        for catalogue_user in catalogue_users:
+            # Try to find the actual telegram chat ID from local DB
+            telegram_id = None
+            display_name = catalogue_user.get('display_name', 'Unknown')
+            
+            # First try to find by username in local DB
+            import db as userdb
+            with userdb.get_connection() as conn:
+                c = conn.cursor()
+                c.execute('SELECT telegram_id FROM users WHERE name = ? OR telegram_id = ?', 
+                         (display_name, catalogue_user.get('username', '')))
+                existing_user = c.fetchone()
+                if existing_user:
+                    telegram_id = existing_user[0]
+                    logging.info(f"[SYNC] Found existing user with telegram_id: {telegram_id}")
+            
+            # If not found, use the catalogue username as fallback
+            if not telegram_id:
+                telegram_id = catalogue_user.get('username') or str(catalogue_user.get('id'))
+                logging.info(f"[SYNC] Using catalogue username as telegram_id: {telegram_id}")
+            
+            # Check if user exists in local DB
+            user_row = get_user_by_telegram_id(telegram_id)
+            if not user_row:
+                # Add user to local DB
+                local_user_id = add_user(telegram_id, display_name)
+                logging.info(f"[SYNC] Added user to local DB: telegram_id={telegram_id}, local_id={local_user_id}")
+            else:
+                local_user_id = user_row[0]
+                logging.info(f"[SYNC] User already exists in local DB: telegram_id={telegram_id}, local_id={local_user_id}")
+            
+            # Find plants assigned to this user in catalogue
+            user_plants = [p for p in catalogue_plants if str(p.get('user_id')) == str(catalogue_user['id'])]
+            logging.info(f"[SYNC] User {catalogue_user['id']} has {len(user_plants)} plants in catalogue")
+            
+            for plant in user_plants:
+                # Check if plant exists in local DB
+                with userdb.get_connection() as conn:
+                    c = conn.cursor()
+                    c.execute('SELECT id FROM plants WHERE name = ? AND species = ?', (plant['name'], plant['species']))
+                    existing_plant = c.fetchone()
+                    
+                    if existing_plant:
+                        plant_id = existing_plant[0]
+                        # Update assignment
+                        assign_plant_to_user(local_user_id, plant_id)
+                        logging.info(f"[SYNC] Updated assignment: local_user_id={local_user_id}, plant_id={plant_id}")
+                    else:
+                        # Add plant to local DB
+                        plant_id = userdb.add_plant(
+                            plant['name'], 
+                            plant.get('type', 'unknown'), 
+                            str(plant.get('thresholds', {})), 
+                            plant.get('species'), 
+                            plant.get('location'), 
+                            local_user_id
+                        )
+                        logging.info(f"[SYNC] Added plant to local DB: plant_id={plant_id}, assigned to local_user_id={local_user_id}")
+        
+        logging.info(f"[SYNC] Completed syncing assignments from catalogue")
+        
+    except Exception as e:
+        logging.error(f"[SYNC] Error syncing from catalogue: {e}")
+
 # Call this before starting the polling thread
+sync_assignments_from_catalogue()
 load_user_plant_assignments()
 
 # Start polling thread at startup (ensure this is at the top level, not inside any function)
@@ -259,18 +362,116 @@ def assign_plant():
         plants = []
     msg = ''
     if request.method == 'POST':
-        user_id = request.form.get('user_id')
-        plant_id = request.form.get('plant_id')
+        user_id = request.form.get('user_id')  # This is catalogue-service user_id
+        plant_id = request.form.get('plant_id')  # This is catalogue-service plant_id
         # Assign plant by updating user_id in catalogue-service
         try:
             update_resp = requests.patch(f"{CATALOGUE_API_URL}/plants/{plant_id}", json={"user_id": user_id})
             if update_resp.status_code == 200:
+                # Find the local database user_id for this catalogue user_id
+                catalogue_user = None
+                for u in users:
+                    if str(u['id']) == str(user_id):
+                        catalogue_user = u
+                        break
+                
+                if catalogue_user:
+                    # Try to find the actual telegram chat ID from local DB
+                    telegram_id = None
+                    display_name = catalogue_user.get('display_name', 'Unknown')
+                    
+                    # First try to find by display name in local DB
+                    import db as userdb
+                    with userdb.get_connection() as conn:
+                        c = conn.cursor()
+                        c.execute('SELECT telegram_id FROM users WHERE name = ? OR telegram_id = ?', 
+                                 (display_name, catalogue_user.get('username', '')))
+                        existing_user = c.fetchone()
+                        if existing_user:
+                            telegram_id = existing_user[0]
+                            logging.info(f"[ASSIGN] Found existing user with telegram_id: {telegram_id}")
+                    
+                    # If not found, use the catalogue username as fallback
+                    if not telegram_id:
+                        telegram_id = catalogue_user.get('username') or str(catalogue_user.get('id'))
+                        logging.info(f"[ASSIGN] Using catalogue username as telegram_id: {telegram_id}")
+                    
+                    # Ensure user exists in local DB
+                    user_row = get_user_by_telegram_id(telegram_id)
+                    if not user_row:
+                        local_user_id = add_user(telegram_id, display_name)
+                        logging.info(f"[ASSIGN] Added user to local DB: telegram_id={telegram_id}, local_id={local_user_id}")
+                    else:
+                        local_user_id = user_row[0]
+                        logging.info(f"[ASSIGN] User exists in local DB: telegram_id={telegram_id}, local_id={local_user_id}")
+                    
+                    # Find the plant in catalogue and add/update in local DB
+                    catalogue_plant = None
+                    for p in plants:
+                        if str(p['id']) == str(plant_id):
+                            catalogue_plant = p
+                            break
+                    
+                    if catalogue_plant:
+                        # Check if plant exists in local DB
+                        with userdb.get_connection() as conn:
+                            c = conn.cursor()
+                            c.execute('SELECT id FROM plants WHERE name = ? AND species = ?', (catalogue_plant['name'], catalogue_plant['species']))
+                            existing_plant = c.fetchone()
+                            
+                            if existing_plant:
+                                local_plant_id = existing_plant[0]
+                                # Update assignment
+                                assign_plant_to_user(local_user_id, local_plant_id)
+                                logging.info(f"[ASSIGN] Updated assignment: local_user_id={local_user_id}, local_plant_id={local_plant_id}")
+                            else:
+                                # Add plant to local DB
+                                local_plant_id = userdb.add_plant(
+                                    catalogue_plant['name'], 
+                                    catalogue_plant.get('type', 'unknown'), 
+                                    str(catalogue_plant.get('thresholds', {})), 
+                                    catalogue_plant.get('species'), 
+                                    catalogue_plant.get('location'), 
+                                    local_user_id
+                                )
+                                logging.info(f"[ASSIGN] Added plant to local DB: plant_id={local_plant_id}, assigned to local_user_id={local_user_id}")
+                        
+                        # Update user_plant_assignments for notifications
+                        try:
+                            # Try to convert telegram_id to int if it's a number
+                            if telegram_id.isdigit():
+                                telegram_id_int = int(telegram_id)
+                                user_plant_assignments[telegram_id_int] = local_plant_id
+                                logging.info(f"[ASSIGN] Updated user_plant_assignments: telegram_id={telegram_id_int}, plant_id={local_plant_id}")
+                            else:
+                                logging.warning(f"[ASSIGN] Cannot convert telegram_id '{telegram_id}' to int, skipping user_plant_assignments update")
+                        except Exception as e:
+                            logging.error(f"[ASSIGN] Failed to update user_plant_assignments: {e}")
+                
                 msg = '<p style="color:green">Plant assigned successfully!</p>'
                 # If you have a mapping from DB user_id to Telegram user_id, use it here:
-                telegram_user_id = get_telegram_user_id_for_db_user(user_id)  # You must implement this lookup
+                telegram_user_id = get_telegram_user_id_for_db_user(local_user_id if 'local_user_id' in locals() else None)
                 if telegram_user_id:
-                    user_plant_assignments[telegram_user_id] = plant_id
-                    logging.info(f"[NOTIFY] Assigned plant {plant_id} to user {user_id} (telegram_user_id={telegram_user_id})")
+                    try:
+                        import asyncio
+                        app = ApplicationBuilder().token(bot_token).build()
+                        plant_name = catalogue_plant.get('name', 'Unknown Plant') if 'catalogue_plant' in locals() else 'a plant'
+                        notification_message = (
+                            f"🎉 <b>New Plant Assigned!</b>\n\n"
+                            f"🌱 <b>{plant_name}</b> has been assigned to you!\n\n"
+                            f"📋 <b>What you can do:</b>\n"
+                            f"• Use /plants to view your plants\n"
+                            f"• Use /status to get plant data\n"
+                            f"• Click on plants to control them\n\n"
+                            f"💡 <b>Tip:</b> Use /plants anytime to see your assigned plants."
+                        )
+                        asyncio.run(app.bot.send_message(
+                            chat_id=telegram_user_id, 
+                            text=notification_message,
+                            parse_mode='HTML'
+                        ))
+                    except Exception as e:
+                        logging.error(f"Failed to notify user {telegram_user_id}: {e}")
             else:
                 msg = f'<p style="color:red">Failed to assign plant: {update_resp.status_code} {update_resp.text}</p>'
         except Exception as e:
@@ -311,87 +512,349 @@ def assign_plant():
             ])}
         </table>
     '''
-
+#
+##
+### Add this logic: After a plant is assigned to user send message automatically
+##
+#
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     telegram_id = str(update.effective_chat.id)
     name = update.effective_user.full_name or update.effective_user.username or telegram_id
-    # Register user in DB if not exists
+    
+    # First try to register in catalogue service
+    catalogue_user_id = get_or_create_user(update.effective_chat.id, update.effective_user.username, update.effective_user.full_name)
+    if catalogue_user_id is None:
+        logging.error(f"[CATALOGUE] Failed to register user in catalogue service: telegram_id={telegram_id}, name={name}")
+        await update.message.reply_text("❌ Error registering with the system. Please try again later.")
+        return
+    
+    # Then handle local database registration
     user_row = get_user_by_telegram_id(telegram_id)
     if not user_row:
         user_id = add_user(telegram_id, name)
-        logging.info(f"[NOTIFY] Registered new user: telegram_id={telegram_id}, name={name}, user_id={user_id}")
-        await update.message.reply_text("✅ You have been registered! Please wait while we assign you a plant.")
+        if user_id:
+            logging.info(f"[LOCAL] Registered new user: telegram_id={telegram_id}, name={name}, user_id={user_id}, catalogue_id={catalogue_user_id}")
+        else:
+            logging.error(f"[LOCAL] Failed to add user to local database: telegram_id={telegram_id}, name={name}")
+            await update.message.reply_text("❌ Error completing registration. Please try again later.")
+            return
     else:
         user_id = user_row[0]
-        logging.info(f"[NOTIFY] Existing user: telegram_id={telegram_id}, name={name}, user_id={user_id}")
+        logging.info(f"[LOCAL] Found existing user: telegram_id={telegram_id}, name={name}, user_id={user_id}, catalogue_id={catalogue_user_id}")
+    
     user_chat_ids.add(update.effective_chat.id)
-    # Auto-assign a plant if user has none
+    
+    # Check if user has plants assigned
     user_plants = get_plants_for_user(user_id)
-    if not user_plants:
-        all_plants = get_all_plants()
-        assigned = False
-        for plant in all_plants:
-            if not plant[6]:  # plant[6] is user_id
-                from db import assign_plant_to_user
-                assign_plant_to_user(user_id, plant[0])
-                logging.info(f"[NOTIFY] Auto-assigned plant {plant[0]} to user {user_id} (telegram_id={telegram_id})")
-                await update.message.reply_text(f"🌱 Plant '{plant[1]}' has been assigned to you!")
-                assigned = True
-                break
-        if not assigned:
-            await update.message.reply_text("No available plants to assign at the moment. Please contact an admin.")
-    # Ask user if they want to join
-    join_keyboard = ReplyKeyboardMarkup(
-        [[KeyboardButton("Join Smart Plant System")]],
-        one_time_keyboard=True, resize_keyboard=True
-    )
-    await update.message.reply_text(
-        "Welcome to Smart Plant Bot!\n\nWould you like to join and manage your plants?",
-        reply_markup=join_keyboard
-    )
-    return
-
-async def join_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.message.text == "Join Smart Plant System":
-        user_id = get_or_create_user(update.effective_chat.id, update.effective_user.username, update.effective_user.full_name)
+    
+    if user_plants:
+        # User has plants - show them immediately
         await update.message.reply_text(
-            "You have joined the Smart Plant System!\n\nIf you have plants assigned, they will appear below. If not, please wait for an admin to assign a plant to you.",
-            reply_markup=None
+            f"🌱 Welcome back, {name}!\n\nYou have {len(user_plants)} plant(s) assigned to you. Here they are:"
         )
         await show_plant_grid(update, context)
     else:
-        await update.message.reply_text("Send /start to begin.")
+        # No plants assigned - show welcome and available commands
+        welcome_message = (
+            f"🌱 Welcome to Smart Plant Care System, {name}!\n\n"
+            "You don't have any plants assigned yet. Here's what you can do:\n\n"
+            "📋 <b>Available Commands:</b>\n"
+            "• /plants - View your assigned plants\n"
+            "• /status - Get latest plant data\n"
+            "• /help - Show this help message\n\n"
+            "⏳ <b>Next Steps:</b>\n"
+            "An admin will assign plants to you soon. You'll receive a notification when plants are assigned!\n\n"
+            "💡 <b>Tip:</b> Use /plants anytime to check if you have new plants assigned."
+        )
+        
+        # Create a nice keyboard with available commands
+        keyboard = [
+            [KeyboardButton("🌱 My Plants"), KeyboardButton("📊 Status")],
+            [KeyboardButton("❓ Help")]
+        ]
+        reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=False)
+        
+        await update.message.reply_text(welcome_message, reply_markup=reply_markup, parse_mode='HTML')
+    
+    return
+
+async def plants_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Command to show user's plants"""
+    await show_plant_grid(update, context)
+
+async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Command to show system status"""
+    telegram_id = str(update.effective_chat.id)
+    user_row = get_user_by_telegram_id(telegram_id)
+    
+    if not user_row:
+        await update.message.reply_text("❌ You're not registered. Please use /start first.")
+        return
+    
+    user_id = user_row[0]
+    user_plants = get_plants_for_user(user_id)
+    
+    if not user_plants:
+        await update.message.reply_text("🌱 You don't have any plants assigned yet. Use /plants to check for new assignments.")
+        return
+    
+    # Show status for all plants
+    status_message = "📊 <b>Plant Status Overview:</b>\n\n"
+    
+    for plant in user_plants:
+        plant_id = plant[0]
+        plant_name = plant[1]
+        plant_species = plant[4] or "Unknown"
+        
+        # Get sensor data for this plant
+        try:
+            base_url = rest_api_url.split('?')[0]
+            url = f"{base_url}?plant_id={plant_id}"
+            data_resp = requests.get(url, timeout=5)
+            
+            if data_resp.status_code == 200:
+                data = data_resp.json()
+                if isinstance(data, list) and data:
+                    data = data[-1]  # Get latest reading
+                
+                if isinstance(data, dict):
+                    temp = data.get("temperature") or data.get("field1", "N/A")
+                    humidity = data.get("humidity") or data.get("field2", "N/A")
+                    soil = data.get("soil_moisture") or data.get("field3", "N/A")
+                    
+                    status_message += f"🌱 <b>{plant_name}</b> ({plant_species})\n"
+                    status_message += f"   🌡️ Temp: {temp}°C\n"
+                    status_message += f"   💧 Humidity: {humidity}%\n"
+                    status_message += f"   🌱 Soil: {soil}\n\n"
+                else:
+                    status_message += f"🌱 <b>{plant_name}</b> ({plant_species})\n"
+                    status_message += f"   ❌ No sensor data available\n\n"
+            else:
+                status_message += f"🌱 <b>{plant_name}</b> ({plant_species})\n"
+                status_message += f"   ❌ No sensor data available\n\n"
+        except Exception as e:
+            status_message += f"🌱 <b>{plant_name}</b> ({plant_species})\n"
+            status_message += f"   ❌ Error fetching data\n\n"
+    
+    await update.message.reply_text(status_message, parse_mode='HTML')
+
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Command to show help"""
+    help_message = (
+        "🌱 <b>Smart Plant Care System - Help</b>\n\n"
+        "📋 <b>Available Commands:</b>\n"
+        "• /start - Start the bot and register\n"
+        "• /plants - View your assigned plants\n"
+        "• /status - Get latest plant data\n"
+        "• /report - Get weekly plant health report\n"
+        "• /help - Show this help message\n\n"
+        "🎯 <b>How to use:</b>\n"
+        "1. Use /start to register with the system\n"
+        "2. Wait for an admin to assign plants to you\n"
+        "3. Use /plants to view your plants\n"
+        "4. Click on a plant to see detailed controls\n"
+        "5. Use /status to get quick overview\n"
+        "6. Use /report for weekly health trends\n\n"
+        "💡 <b>Features:</b>\n"
+        "• Real-time sensor data\n"
+        "• Remote watering control\n"
+        "• LED lighting control\n"
+        "• Plant health monitoring\n"
+        "• Weekly health reports\n"
+        "• Automatic notifications\n\n"
+        "🆘 <b>Need help?</b>\n"
+        "Contact an admin if you have issues."
+    )
+    
+    keyboard = [
+        [KeyboardButton("🌱 My Plants"), KeyboardButton("📊 Status")],
+        [KeyboardButton("📈 Report"), KeyboardButton("❓ Help")]
+    ]
+    reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=False)
+    
+    await update.message.reply_text(help_message, reply_markup=reply_markup, parse_mode='HTML')
+
+async def report_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Command to show weekly plant health report"""
+    telegram_id = str(update.effective_chat.id)
+    user_row = get_user_by_telegram_id(telegram_id)
+    
+    if not user_row:
+        await update.message.reply_text("❌ You're not registered. Please use /start first.")
+        return
+    
+    user_id = user_row[0]
+    user_plants = get_plants_for_user(user_id)
+    
+    if not user_plants:
+        await update.message.reply_text("🌱 You don't have any plants assigned yet. Use /plants to check for new assignments.")
+        return
+    
+    # Show loading message
+    loading_msg = await update.message.reply_text("📊 Generating weekly report... Please wait.")
+    
+    try:
+        # Fetch weekly report from analytics service
+        analytics_url = os.environ.get('ANALYTICS_SERVICE_URL', 'http://analytics-service:5000')
+        report_url = f"{analytics_url}/report/weekly"
+        
+        resp = requests.get(report_url, timeout=10)
+        if resp.status_code == 200:
+            report_data = resp.json()
+            
+            # Create a nice report message
+            report_message = "📈 <b>Weekly Plant Health Report</b>\n\n"
+            report_message += f"📅 Generated: {report_data.get('generated_at', 'Unknown')}\n\n"
+            
+            # Temperature section
+            if 'temperature' in report_data:
+                temp = report_data['temperature']
+                report_message += "🌡️ <b>Temperature Trends:</b>\n"
+                report_message += f"   • Average: {temp.get('avg', 'N/A')}°C\n"
+                report_message += f"   • Range: {temp.get('min', 'N/A')}°C - {temp.get('max', 'N/A')}°C\n\n"
+            
+            # Humidity section
+            if 'humidity' in report_data:
+                hum = report_data['humidity']
+                report_message += "💧 <b>Humidity Trends:</b>\n"
+                report_message += f"   • Average: {hum.get('avg', 'N/A')}%\n"
+                report_message += f"   • Range: {hum.get('min', 'N/A')}% - {hum.get('max', 'N/A')}%\n\n"
+            
+            # Soil moisture section
+            if 'soil_moisture' in report_data:
+                soil = report_data['soil_moisture']
+                report_message += "🌱 <b>Soil Moisture Trends:</b>\n"
+                report_message += f"   • Average: {soil.get('avg', 'N/A')}\n"
+                report_message += f"   • Range: {soil.get('min', 'N/A')} - {soil.get('max', 'N/A')}\n\n"
+            
+            # Health assessment
+            report_message += "🏥 <b>Health Assessment:</b>\n"
+            
+            # Simple health assessment based on thresholds
+            health_score = 0
+            total_checks = 0
+            
+            if 'temperature' in report_data:
+                temp_avg = report_data['temperature'].get('avg', 0)
+                if 18 <= temp_avg <= 30:
+                    health_score += 1
+                total_checks += 1
+            
+            if 'humidity' in report_data:
+                hum_avg = report_data['humidity'].get('avg', 0)
+                if 40 <= hum_avg <= 80:
+                    health_score += 1
+                total_checks += 1
+            
+            if 'soil_moisture' in report_data:
+                soil_avg = report_data['soil_moisture'].get('avg', 0)
+                if soil_avg >= 350:
+                    health_score += 1
+                total_checks += 1
+            
+            if total_checks > 0:
+                health_percentage = (health_score / total_checks) * 100
+                if health_percentage >= 80:
+                    report_message += "   ✅ Excellent plant health\n"
+                elif health_percentage >= 60:
+                    report_message += "   ⚠️ Good plant health\n"
+                else:
+                    report_message += "   ❌ Needs attention\n"
+            else:
+                report_message += "   ❓ Insufficient data\n"
+            
+            report_message += "\n💡 <b>Recommendations:</b>\n"
+            report_message += "• Check individual plant details with /plants\n"
+            report_message += "• Use /status for current readings\n"
+            report_message += "• Monitor for any alerts\n"
+            
+            # Update the loading message with the report
+            await loading_msg.edit_text(report_message, parse_mode='HTML')
+            
+        else:
+            await loading_msg.edit_text("❌ Failed to generate report. Please try again later.")
+            
+    except Exception as e:
+        logging.error(f"Error generating report: {e}")
+        await loading_msg.edit_text("❌ Error generating report. Please try again later.")
+
+async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle text button presses"""
+    text = update.message.text
+    
+    if text == "🌱 My Plants":
+        await show_plant_grid(update, context)
+    elif text == "📊 Status":
+        await status_command(update, context)
+    elif text == "📈 Report":
+        await report_command(update, context)
+    elif text == "❓ Help":
+        await help_command(update, context)
+    else:
+        await update.message.reply_text("Use the buttons below or type /help for available commands.")
+
+async def join_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Redirect to plants command
+    await show_plant_grid(update, context)
 
 async def show_plant_grid(update, context):
     chat_id = update.effective_chat.id
-    user_id = get_user_id_for_chat(chat_id, update.effective_user.username, update.effective_user.full_name)
+    username = update.effective_user.username
+    display_name = update.effective_user.full_name
+    
+    # Get user ID from catalogue service
+    catalogue_user_id = get_or_create_user(chat_id, username, display_name)
+    if catalogue_user_id is None:
+        logging.error(f"[CATALOGUE] Failed to get/create user for plant grid: chat_id={chat_id}")
+        await update.message.reply_text("❌ Error accessing your plants. Please try again later.")
+        return
+    
     try:
-        resp = requests.get(f"{CATALOGUE_API_URL}/plants")
+        # Fetch plants from catalogue service using catalogue_user_id
+        resp = requests.get(f"{CATALOGUE_API_URL}/plants", timeout=5)
+        if resp.status_code != 200:
+            logging.error(f"[CATALOGUE] Failed to fetch plants: {resp.status_code} {resp.text}")
+            await update.message.reply_text("❌ Error fetching your plants. Please try again later or contact support.")
+            return
+            
         all_plants = resp.json()
-        plants = [p for p in all_plants if p.get('user_id') == user_id]
+        plants = [p for p in all_plants if str(p.get('user_id')) == str(catalogue_user_id)]
+        logging.info(f"[CATALOGUE] Found {len(plants)} plants for user {catalogue_user_id}")
+        
     except Exception as e:
-        logging.error(f"Failed to fetch plants from catalogue-service: {e}")
+        logging.error(f"[CATALOGUE] Failed to fetch plants from catalogue-service: {e}")
         await update.message.reply_text("❌ Error fetching your plants. Please try again later or contact support.")
-        plants = []
+        return
+        
     if not plants:
         await update.message.reply_text("You have no plants assigned yet. Please wait for an admin to assign a plant to you.")
         return
+        
     # Group plants by location
     locations = {}
     for p in plants:
         loc = p.get('location') or 'Default'
         locations.setdefault(loc, []).append({'id': p['id'], 'name': p['name'], 'species': p['species']})
+        
     keyboard = []
     for loc, plist in locations.items():
         row = [InlineKeyboardButton(f"{p['name']} ({p['species']})", callback_data=f"plant_{p['id']}") for p in plist]
         keyboard.append(row)
+        
     reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    message = "Your Plants by Location:\n"
+    for loc, plist in locations.items():
+        message += f"\n📍 {loc}:\n"
+        for p in plist:
+            message += f"  • {p['name']} ({p['species']})\n"
+    
     if getattr(update, 'message', None):
-        await update.message.reply_text("Select a plant by location:", reply_markup=reply_markup)
+        await update.message.reply_text(message, reply_markup=reply_markup)
     elif getattr(update, 'callback_query', None):
-        await update.callback_query.message.reply_text("Select a plant by location:", reply_markup=reply_markup)
+        await update.callback_query.message.reply_text(message, reply_markup=reply_markup)
     else:
-        await context.bot.send_message(chat_id=update.effective_chat.id, text="Select a plant by location:", reply_markup=reply_markup)
+        await context.bot.send_message(chat_id=update.effective_chat.id, text=message, reply_markup=reply_markup)
 
 async def handle_plant_select(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -602,10 +1065,13 @@ async def handle_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
 def start_bot():
     app = ApplicationBuilder().token(bot_token).build()
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), join_handler))
+    app.add_handler(CommandHandler("plants", plants_command))
+    app.add_handler(CommandHandler("status", status_command))
+    app.add_handler(CommandHandler("report", report_command))
+    app.add_handler(CommandHandler("help", help_command))
+    app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_text_message))
     app.add_handler(CallbackQueryHandler(handle_plant_select, pattern="^plant_"))
     app.add_handler(CallbackQueryHandler(handle_action, pattern="^(toggle_light_|water_|back_to_grid)"))
-    logging.info("Telegram bot started.")
     app.run_polling()
 
 if __name__ == "__main__":

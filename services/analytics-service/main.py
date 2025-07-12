@@ -32,7 +32,7 @@ try:
     reg_payload = {
         "name": "Analytics Service",
         "type": "analytics",
-        "config": {"report_endpoint": "/report/weekly"}
+        "config": {"report_endpoint": "/report/weekly"} # Available in http://catalogue-service:5003/report/weekly
     }
     resp = requests.post(CATALOGUE_URL, json=reg_payload, timeout=5)
     if resp.status_code == 201:

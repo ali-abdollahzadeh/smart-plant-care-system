@@ -4,6 +4,12 @@ import logging
 import yaml
 import requests
 import paho.mqtt.client as mqtt
+from db import init_db, ensure_db
+
+# Initialize database before importing telegram_bot
+init_db()
+ensure_db()
+
 from telegram_bot import start_bot, app  # import the Flask app
 from notifier import send_alert
 

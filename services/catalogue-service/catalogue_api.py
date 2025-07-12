@@ -5,13 +5,15 @@ import os
 import json
 
 app = Flask(__name__)
-DB_PATH = os.environ.get("CATALOGUE_DB_PATH", "/app/catalogue_data.db")
+DB_PATH = os.environ.get("CATALOGUE_DB_PATH", "/app/data/catalogue_data.db")
 
 def get_db():
+    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
 
+# Initialize the local SQLite database
 def init_db():
     conn = get_db()
     c = conn.cursor()
@@ -47,6 +49,7 @@ def init_db():
 
 init_db()
 
+# Auto import plants if the database is empty
 def auto_import_plants_if_empty():
     conn = get_db()
     c = conn.cursor()

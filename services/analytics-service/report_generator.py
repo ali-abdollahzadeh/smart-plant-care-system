@@ -2,6 +2,7 @@ import requests
 import logging
 import datetime
 
+# Fetch the data from the Thingspeak channel
 def fetch_thingspeak_data(channel_id, read_api_key, days=7):
     url = f"https://api.thingspeak.com/channels/{channel_id}/feeds.json"
     params = {
@@ -17,12 +18,13 @@ def fetch_thingspeak_data(channel_id, read_api_key, days=7):
         logging.error(f"ThingSpeak fetch error: {e}")
         return []
 
+# Parse the sensor data
 def parse_sensor_data(feeds):
     temps, hums, moistures = [], [], []
     for entry in feeds:
         try:
-            temp = float(entry.get('field1', 'nan'))
-            hum = float(entry.get('field2', 'nan'))
+            temp = float(entry.get('field1', 'nan')) 
+            hum = float(entry.get('field2', 'nan')) 
             moist = float(entry.get('field3', 'nan'))
             if not any(map(lambda x: x != x, [temp, hum, moist])):  # check for NaN
                 temps.append(temp)
@@ -32,9 +34,10 @@ def parse_sensor_data(feeds):
             continue
     return temps, hums, moistures
 
-def generate_weekly_report(channel_id, read_api_key):
-    feeds = fetch_thingspeak_data(channel_id, read_api_key)
-    temps, hums, moistures = parse_sensor_data(feeds)
+# Generate the weekly report
+def generate_weekly_report(channel_id, read_api_key): 
+    feeds = fetch_thingspeak_data(channel_id, read_api_key) 
+    temps, hums, moistures = parse_sensor_data(feeds) 
     report = {}
     if temps:
         report['temperature'] = {

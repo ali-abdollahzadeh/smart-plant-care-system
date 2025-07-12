@@ -1,6 +1,7 @@
 import requests
 import logging
 
+# Post the data to the Thingspeak channel
 def post_data(thingspeak_url, write_api_key, temperature, humidity, soil_moisture):
     payload = {
         'api_key': write_api_key,
@@ -17,6 +18,7 @@ def post_data(thingspeak_url, write_api_key, temperature, humidity, soil_moistur
         logging.error(f"ThingSpeak post error: {e}")
         return False
 
+# Get the data from the Thingspeak channel
 def get_data(channel_id, read_api_key, results=100):
     url = f"https://api.thingspeak.com/channels/{channel_id}/feeds.json"
     params = {'api_key': read_api_key, 'results': results}

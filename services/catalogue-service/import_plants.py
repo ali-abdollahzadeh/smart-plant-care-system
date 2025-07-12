@@ -1,6 +1,7 @@
 import json
 import requests
 
+# Import the plants from the home_plants_database.json file
 PLANTS_FILE = 'home_plants_database.json'
 API_URL = 'http://localhost:5000/plants'
 
