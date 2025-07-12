@@ -371,3 +371,36 @@ def register_user_form():
 @app.route('/register_user_success')
 def register_user_success():
     return '<h3>User registered successfully!</h3><a href="/register_user">Register another</a> | <a href="/register_plant">Register a plant</a>'
+
+@app.route('/health', methods=['GET'])
+def health_check():
+    """Simple health check endpoint"""
+    try:
+        # Test database connection
+        conn = get_db()
+        c = conn.cursor()
+        c.execute('SELECT COUNT(*) FROM plants')
+        plant_count = c.fetchone()[0]
+        c.execute('SELECT COUNT(*) FROM users')
+        user_count = c.fetchone()[0]
+        c.execute('SELECT COUNT(*) FROM devices')
+        device_count = c.fetchone()[0]
+        c.execute('SELECT COUNT(*) FROM services')
+        service_count = c.fetchone()[0]
+        conn.close()
+        
+        return jsonify({
+            'status': 'healthy',
+            'database': 'connected',
+            'counts': {
+                'plants': plant_count,
+                'users': user_count,
+                'devices': device_count,
+                'services': service_count
+            }
+        }), 200
+    except Exception as e:
+        return jsonify({
+            'status': 'unhealthy',
+            'error': str(e)
+        }), 500

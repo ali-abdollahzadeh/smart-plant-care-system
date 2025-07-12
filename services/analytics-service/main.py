@@ -64,5 +64,25 @@ def weekly_report():
     )
     return jsonify(report)
 
+@app.route('/health', methods=['GET'])
+def health_check():
+    """Simple health check endpoint"""
+    try:
+        # Test ThingSpeak connection
+        test_report = generate_weekly_report(
+            channel_id=thingspeak_conf['channel_id'],
+            read_api_key=thingspeak_conf['read_api_key']
+        )
+        return jsonify({
+            'status': 'healthy',
+            'thingspeak': 'connected',
+            'control_center': 'running'
+        }), 200
+    except Exception as e:
+        return jsonify({
+            'status': 'unhealthy',
+            'error': str(e)
+        }), 500
+
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)

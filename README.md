@@ -1,116 +1,155 @@
 # Smart Plant Care System
 
-Project for the course Programming for IoT Applications at Politecnico di Torino, academic year 2023-2024.
+A microservices-based IoT system for automated plant monitoring and care using Raspberry Pi sensors, MQTT communication, and cloud integration.
 
-## Overview
-![Use case Diagram](old_structure/docs/use_case_diagram.jpg)
-The Smart Plant Care System is a modular, microservices-based IoT solution for automating and optimizing plant care. It leverages sensors, a Raspberry Pi, cloud services, and user interfaces to monitor and manage plant health. The system provides real-time monitoring, automated control, historical analytics, and user notifications via Telegram and dashboards.
+## 🏗️ System Architecture
 
-## Architecture
+The system consists of 5 microservices that work together to provide comprehensive plant care automation:
 
-The system is composed of several Dockerized microservices, each with a dedicated responsibility:
+```
+┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
+│   Sensor        │    │   Analytics     │    │   Cloud         │
+│   Service       │    │   Service       │    │   Adapter       │
+│   (Port 5002)   │    │   (Port 5003)   │    │   (Port 5001)   │
+└─────────────────┘    └─────────────────┘    └─────────────────┘
+         │                       │                       │
+         └───────────────────────┼───────────────────────┘
+                                 │
+                    ┌─────────────────┐
+                    │   MQTT Broker   │
+                    │   (Port 1883)   │
+                    └─────────────────┘
+                                 │
+                    ┌─────────────────┐    ┌─────────────────┐
+                    │   Catalogue     │    │   User          │
+                    │   Service       │    │   Service       │
+                    │   (Port 5000)   │    │   (Port 5500)   │
+                    └─────────────────┘    └─────────────────┘
+```
 
-- **Sensor Service**: Reads real or simulated sensor data (soil moisture, temperature, humidity), publishes to MQTT, and exposes actuator control via REST.
-- **Analytics Service**: Subscribes to sensor data, analyzes trends, triggers automated actions, and generates weekly reports.
-- **Catalogue Service**: Central registry for plants, users, devices, and services. Manages plant/user assignments and stores plant metadata.
-- **Cloud Adapter Service**: Bridges MQTT sensor data to ThingSpeak for historical storage and provides REST endpoints for data retrieval.
-- **User Service**: Manages user interactions via a Telegram Bot, handles notifications, and provides web endpoints for plant/user management.
-- **MQTT Broker**: Facilitates real-time messaging between services.
+## 🚀 Quick Start
 
-All services are orchestrated via Docker Compose.
+### Prerequisites
+- Docker and Docker Compose
+- Python 3.8+ (for local development)
 
-## Features
+### Running the System
 
-- **Automated Monitoring**: Continuous collection of soil moisture, temperature, and humidity.
-- **Real-Time Alerts**: Telegram notifications for abnormal conditions or required actions.
-- **Automated Actuation**: Remote and automated control of actuators (watering, LEDs) based on analytics.
-- **Data Visualization**: Node-RED dashboard for real-time and historical data.
-- **Historical Analytics**: Weekly reports and recommendations based on ThingSpeak data.
-- **Multi-User Support**: Each user can be assigned specific plants, with personalized notifications and thresholds.
-- **RESTful APIs**: Each service exposes APIs for integration and management.
+1. **Clone the repository**
+   ```bash
+   git clone <repository-url>
+   cd smart-plant-care-system
+   ```
 
-## Microservices & APIs
+2. **Start all services**
+   ```bash
+   docker-compose up -d
+   ```
 
-### Sensor Service (`/services/sensor-service`)
-- Publishes sensor data to MQTT (`plant/sensor`).
-- Subscribes to actuator commands (`plant/command`).
-- REST API:
-  - `POST /actuator` — Control actuators (e.g., watering, LED) for a plant.
-  - `GET /actuator` — Get current actuator state for a plant.
+3. **Access the services**
+   - Catalogue Service: http://localhost:5000
+   - Cloud Adapter: http://localhost:5001
+   - Sensor Service: http://localhost:5002
+   - Analytics Service: http://localhost:5003
+   - User Service: http://localhost:5500
+   - Node-RED Dashboard: http://localhost:1880
 
-### Analytics Service (`/services/analytics-service`)
-- Subscribes to sensor data, analyzes for threshold violations.
-- Publishes actuator commands for automated care.
-- REST API:
-  - `GET /report/weekly` — Generate and retrieve a weekly plant care report.
+## 📋 Service Overview
 
-### Catalogue Service (`/services/catalogue-service`)
-- Central registry for all plants, users, devices, and services.
-- REST API (main endpoints):
-  - `POST /devices`, `GET /devices`, `GET /devices/<id>`
-  - `POST /services`, `GET /services`, `GET /services/<id>`
-  - `POST /plants`, `GET /plants`, `GET /plants/<id>`, `PATCH /plants/<id>`
-  - `GET /plants/active` — List all active (assigned) plants.
-  - `POST /users`, `GET /users`, `POST /users/<id>/activate`
-  - Web forms: `/register_plant`, `/register_user`
+| Service | Port | Purpose | Status |
+|---------|------|---------|--------|
+| [Catalogue Service](services/catalogue-service/README.md) | 5000 | Device/Service Registry & Plant Database | ✅ Active |
+| [Sensor Service](services/sensor-service/README.md) | 5002 | Sensor Data Collection & Actuator Control | ✅ Active |
+| [Analytics Service](services/analytics-service/README.md) | 5003 | Data Analysis & Automated Control | ✅ Active |
+| [Cloud Adapter Service](services/cloud-adapter-service/README.md) | 5001 | Cloud Integration (ThingSpeak) | ✅ Active |
+| [User Service](services/user-service/README.md) | 5500 | Telegram Bot & User Notifications | ✅ Active |
 
-### Cloud Adapter Service (`/services/cloud-adapter-service`)
-- Bridges MQTT sensor data to ThingSpeak for storage.
-- REST API:
-  - `GET /data` — Latest sensor data (optionally filter by `plant_id`).
-  - `GET /thingspeak_data` — Historical data from ThingSpeak.
+## 🔧 Configuration
 
-### User Service (`/services/user-service`)
-- Telegram Bot for user notifications and commands.
-- REST API:
-  - `POST /notify` — Send a notification to a user.
-  - `GET,POST /register_plant` — Web form to register a new plant.
-  - `GET,POST /assign_plant` — Web form to assign a plant to a user.
+The system uses a centralized configuration file at `shared/config/global_config.yaml`:
 
-## User Interfaces
+- **MQTT Settings**: Broker URL, topics, and data format
+- **Sensor Thresholds**: Temperature, humidity, and soil moisture limits
+- **Cloud Integration**: ThingSpeak API keys and channel settings
+- **Telegram Bot**: Bot token for user notifications
+- **Simulation Mode**: Enable/disable simulated sensors
 
-- **Telegram Bot**: Receive alerts, request status, control actuators, and get recommendations.
-- **Node-RED Dashboard**: Visualize real-time and historical plant data.
-- **Web Forms**: For plant/user registration and assignment (via User and Catalogue services).
+## 📊 Data Flow
 
-## Data Flow
+1. **Sensor Data Collection**: Sensor Service reads data from physical/simulated sensors
+2. **MQTT Publishing**: Data is published to `plant/sensor` topic
+3. **Analytics Processing**: Analytics Service analyzes data and sends control commands
+4. **Cloud Integration**: Cloud Adapter forwards data to ThingSpeak
+5. **User Notifications**: User Service sends alerts via Telegram
+6. **Dashboard**: Node-RED provides real-time visualization
 
-1. **Sensors** (real or simulated) → Sensor Service → MQTT Broker
-2. **Cloud Adapter Service** subscribes to MQTT, stores data in ThingSpeak, exposes REST API.
-3. **Analytics Service** subscribes to MQTT, analyzes data, triggers actuators if needed, generates reports.
-4. **User Service** notifies users via Telegram and web.
-5. **Catalogue Service** manages metadata and assignments.
+## 🛠️ Development
 
-## Hardware Requirements
+### Local Development Setup
 
-- Raspberry Pi 3 B (or compatible)
-- Soil Moisture Sensor
-- DHT11 Sensor (Temperature & Humidity)
-- LEDs for status indication
-- Breadboard, jumper wires, power supply
+1. **Install dependencies for each service**
+   ```bash
+   cd services/[service-name]
+   pip install -r requirements.txt
+   ```
 
-## Software Requirements
+2. **Run individual services**
+   ```bash
+   python main.py
+   ```
 
-- Docker & Docker Compose
-- Python 3.7+ (for development)
-- ThingSpeak account (for cloud storage)
-- Telegram Bot token
+3. **Run with Docker**
+   ```bash
+   docker-compose up [service-name]
+   ```
 
-## Quick Start
+### Adding New Services
 
-1. Clone the repository.
-2. Configure `shared/config/global_config.yaml` with your credentials.
-3. Run `docker-compose up --build` to start all services.
-4. Register your Telegram Bot and add the token to the config.
-5. Access the Node-RED dashboard and web forms as needed.
+1. Create service directory in `services/`
+2. Add Dockerfile and requirements.txt
+3. Update docker-compose.yml
+4. Register service in catalogue
+5. Update this README
 
-## Extensibility
+## 📈 Monitoring
 
-- Add new plant types and thresholds in `catalogue-service/home_plants_database.json`.
-- Extend analytics or notification logic in the respective services.
-- Integrate additional sensors or actuators by updating the Sensor Service.
+- **MQTT Topics**:
+  - `plant/sensor`: Sensor data
+  - `plant/command`: Actuator commands
+  - `plant/commands`: General commands
 
-## License
+- **Available Endpoints**:
+  - **Catalogue Service**: http://localhost:5000/health (health check), http://localhost:5000/plants (list plants)
+  - **Sensor Service**: http://localhost:5002/actuator (actuator status)
+  - **Analytics Service**: http://localhost:5003/health (health check), http://localhost:5003/report/weekly (weekly reports)
+  - **Cloud Adapter**: http://localhost:5001/data (latest sensor data)
+  - **User Service**: POST http://localhost:5500/notify (send notifications)
 
-MIT License
+- **Web Forms**:
+  - **Plant Registration**: http://localhost:5000/register_plant
+  - **User Registration**: http://localhost:5000/register_user
+  - **Plant Assignment**: http://localhost:5500/assign_plant
+
+## 🤝 Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Add tests if applicable
+5. Submit a pull request
+
+## 📄 License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+## 🆘 Support
+
+For issues and questions:
+1. Check the individual service README files
+2. Review the logs: `docker-compose logs [service-name]`
+3. Open an issue on GitHub
+
+---
+
+**Next Steps**: Check out the individual service documentation for detailed setup and usage instructions.
 
