@@ -149,7 +149,3 @@ For issues and questions:
 2. Review the logs: `docker-compose logs [service-name]`
 3. Open an issue on GitHub
 
----
-
-**Next Steps**: Check out the individual service documentation for detailed setup and usage instructions.
-
