@@ -130,26 +130,8 @@ The system uses a centralized configuration file at `shared/config/global_config
   - **User Registration**: http://localhost:5000/register_user
   - **Plant Assignment**: http://localhost:5500/assign_plant
 
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests if applicable
-5. Submit a pull request
 
 ## 📄 License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
-
-## 🆘 Support
-
-For issues and questions:
-1. Check the individual service README files
-2. Review the logs: `docker-compose logs [service-name]`
-3. Open an issue on GitHub
-
----
-
-**Next Steps**: Check out the individual service documentation for detailed setup and usage instructions.
 
