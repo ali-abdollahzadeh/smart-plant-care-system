@@ -15,9 +15,9 @@ services:
       dockerfile: Dockerfile
     container_name: sensor-service
     volumes:
-      - ./shared/config:/app/shared/config:ro
+      - ./services/sensor-service/config.yaml:/app/config.yaml:ro
     environment:
-      - CONFIG_PATH=/app/shared/config/global_config.yaml
+      - CONFIG_PATH=/app/config.yaml
     restart: unless-stopped
     depends_on:
       - mqtt-broker
@@ -32,9 +32,9 @@ services:
     ports:
       - "5003:5000"
     volumes:
-      - ./shared/config:/app/shared/config:ro
+      - ./services/analytics-service/config.yaml:/app/config.yaml:ro
     environment:
-      - CONFIG_PATH=/app/shared/config/global_config.yaml
+      - CONFIG_PATH=/app/config.yaml
     restart: unless-stopped
     depends_on:
       - mqtt-broker
@@ -47,10 +47,10 @@ services:
     ports:
       - "5000:5000"
     volumes:
-      - ./shared/config:/app/shared/config:ro
+      - ./services/catalogue-service/config.yaml:/app/config.yaml:ro
       - catalogue_db:/app/catalogue_data.db
     environment:
-      - CONFIG_PATH=/app/shared/config/global_config.yaml
+      - CONFIG_PATH=/app/config.yaml
     restart: unless-stopped
 
   cloud-adapter-service:
@@ -61,9 +61,9 @@ services:
     ports:
       - "5001:5001"
     volumes:
-      - ./shared/config:/app/shared/config:ro
+      - ./services/cloud-adapter-service/config.yaml:/app/config.yaml:ro
     environment:
-      - CONFIG_PATH=/app/shared/config/global_config.yaml
+      - CONFIG_PATH=/app/config.yaml
     restart: unless-stopped
     depends_on:
       - mqtt-broker
@@ -74,10 +74,10 @@ services:
       dockerfile: Dockerfile
     container_name: user-service
     volumes:
-      - ./shared/config:/app/shared/config:ro
+      - ./services/user-service/config.yaml:/app/config.yaml:ro
       - user_db:/app/user_data.db
     environment:
-      - CONFIG_PATH=/app/shared/config/global_config.yaml
+      - CONFIG_PATH=/app/config.yaml
     restart: unless-stopped
     depends_on:
       - mqtt-broker

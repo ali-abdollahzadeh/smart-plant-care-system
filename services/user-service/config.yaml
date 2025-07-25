@@ -1,5 +1,10 @@
-# User Service Config
-# Most settings are loaded from shared/config/global_config.yaml
-# You can override or add service-specific settings here.
+mqtt:
+  broker_url: "mqtt-broker"
+  port: 1883
+  publish_topic: "plant/sensor"
+  subscribe_topic: "plant/commands"
+  command_topic: "plant/command"  # Actuator control (manual, Telegram, automated)
+  data_format: "json"
 
-# Example: admin_chat_id: 123456789
+telegram:
+  bot_token: "7105387626:AAHyiexS3gA5XPhkox16NfVRq9hAx8FxcA8"

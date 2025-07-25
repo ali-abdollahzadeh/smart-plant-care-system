@@ -1,5 +1,13 @@
-# Cloud Adapter Service Config
-# Most settings are loaded from shared/config/global_config.yaml
-# You can override or add service-specific settings here.
+mqtt:
+  broker_url: "mqtt-broker"
+  port: 1883
+  publish_topic: "plant/sensor"
+  subscribe_topic: "plant/commands"
+  command_topic: "plant/command"  # Actuator control (manual, Telegram, automated)
+  data_format: "json"
 
-# Example: thingspeak_update_interval: 60  # seconds
+thingspeak:
+  channel_id: "2634978"
+  write_api_key: "EPX655D74F8VR98F"
+  read_api_key: "W1OQL6BMVSJW6RWF"
+  update_url: "https://api.thingspeak.com/update"

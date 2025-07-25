@@ -2,5 +2,30 @@
 # Most settings are loaded from shared/config/global_config.yaml
 # You can override or add service-specific settings here.
 
+mqtt:
+  broker_url: "mqtt-broker"
+  port: 1883
+  publish_topic: "plant/sensor"
+  subscribe_topic: "plant/commands"
+  command_topic: "plant/command"  # Actuator control (manual, Telegram, automated)
+  data_format: "json"
+
+sensor_thresholds:
+  temperature:
+    min: 15  # Celsius
+    max: 35
+  humidity:
+    min: 30  # Percent
+    max: 80
+  soil_moisture:
+    min: 300  # ADC value or percentage
+    max: 800
+
+thingspeak:
+  channel_id: "2634978"
+  write_api_key: "EPX655D74F8VR98F"
+  read_api_key: "W1OQL6BMVSJW6RWF"
+  update_url: "https://api.thingspeak.com/update"
+
 report:
   interval_days: 7  # Weekly report
