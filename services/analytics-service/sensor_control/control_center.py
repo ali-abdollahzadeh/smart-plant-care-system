@@ -63,7 +63,7 @@ class ControlCenter:
             # Check if the temperature is out of range
             if 'temperature' in data:
                 t = data['temperature'] 
-                if t < thresholds['temperature']['min'] or t > thresholds['tempe ture']['max']: 
+                if t < thresholds['temperature']['min'] or t > thresholds['temperature']['max']: 
                     alerts.append(f"Temperature out of range: {t}")
             # Check if the humidity is out of range
             if 'humidity' in data:

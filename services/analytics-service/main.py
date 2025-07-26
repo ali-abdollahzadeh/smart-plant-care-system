@@ -11,8 +11,8 @@ import logging
 import yaml
 import requests
 from flask import Flask, jsonify
-from report_generator import generate_weekly_report
-from control_center import ControlCenter
+from report_generator.report_generator import generate_weekly_report
+from sensor_control.control_center import ControlCenter
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='[%(asctime)s] %(levelname)s: %(message)s')
