@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Register Plant - Smart Plant Care</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <h1><i class="fas fa-seedling"></i> Smart Plant Care Dashboard</h1>
+            <nav class="nav">
+                <a href="/" class="nav-link"><i class="fas fa-home"></i> Dashboard</a>
+                <a href="/register_user" class="nav-link"><i class="fas fa-user-plus"></i> Register User</a>
+                <a href="/register_plant" class="nav-link active"><i class="fas fa-leaf"></i> Register Plant</a>
+                <a href="/assign_plant" class="nav-link"><i class="fas fa-link"></i> Assign Plant</a>
+                <a href="/plant_status" class="nav-link"><i class="fas fa-chart-line"></i> Plant Status</a>
+            </nav>
+        </header>
+
+        <main class="main">
+            <div class="form-container">
+                <div class="card">
+                    <div class="card-header">
+                        <i class="fas fa-leaf"></i>
+                        <h2>Register a New Plant</h2>
+                    </div>
+                    <div class="card-content">
+                        {% if message %}
+                        <div class="alert alert-success">
+                            <i class="fas fa-check-circle"></i>
+                            {{ message }}
+                        </div>
+                        {% endif %}
+                        
+                        <form method="post" class="form">
+                            <div class="form-group">
+                                <label for="user_id">
+                                    <i class="fas fa-user"></i> User
+                                </label>
+                                <select name="user_id" id="user_id" required class="form-control">
+                                    <option value="">Select a user</option>
+                                    {% for user in users %}
+                                    <option value="{{ user[0] }}">{{ user[1] or user[2] }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label for="name">
+                                    <i class="fas fa-tag"></i> Plant Name
+                                </label>
+                                <input type="text" id="name" name="name" required 
+                                       placeholder="Enter plant name" class="form-control">
+                            </div>
+                            
+                            <div class="form-group">
+                                <label for="type">
+                                    <i class="fas fa-seedling"></i> Type
+                                </label>
+                                <input type="text" id="type" name="type" 
+                                       placeholder="Enter plant type" class="form-control">
+                            </div>
+                            
+                            <div class="form-group">
+                                <label for="species">
+                                    <i class="fas fa-leaf"></i> Species
+                                </label>
+                                <input type="text" id="species" name="species" 
+                                       placeholder="Enter species" class="form-control">
+                            </div>
+                            
+                            <div class="form-group">
+                                <label for="location">
+                                    <i class="fas fa-map-marker-alt"></i> Location
+                                </label>
+                                <input type="text" id="location" name="location" 
+                                       placeholder="Enter location" class="form-control">
+                            </div>
+                            
+                            <div class="form-group">
+                                <label for="thresholds">
+                                    <i class="fas fa-sliders-h"></i> Thresholds (JSON format)
+                                </label>
+                                <textarea id="thresholds" name="thresholds" required 
+                                          placeholder='{"temperature": {"min": 18, "max": 30}, "humidity": {"min": 40, "max": 80}, "soil_moisture": {"min": 350, "max": 750}}' 
+                                          class="form-control" rows="4"></textarea>
+                                <small class="form-help">Enter thresholds in JSON format</small>
+                            </div>
+                            
+                            <div class="form-actions">
+                                <button type="submit" class="btn btn-primary">
+                                    <i class="fas fa-save"></i> Register Plant
+                                </button>
+                                <a href="/" class="btn btn-secondary">
+                                    <i class="fas fa-arrow-left"></i> Back to Dashboard
+                                </a>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+</body>
+</html> 

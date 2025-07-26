@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Plant Status - Smart Plant Care</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <h1><i class="fas fa-seedling"></i> Smart Plant Care Dashboard</h1>
+            <nav class="nav">
+                <a href="/" class="nav-link"><i class="fas fa-home"></i> Dashboard</a>
+                <a href="/register_user" class="nav-link"><i class="fas fa-user-plus"></i> Register User</a>
+                <a href="/register_plant" class="nav-link"><i class="fas fa-leaf"></i> Register Plant</a>
+                <a href="/assign_plant" class="nav-link"><i class="fas fa-link"></i> Assign Plant</a>
+                <a href="/plant_status" class="nav-link active"><i class="fas fa-chart-line"></i> Plant Status</a>
+            </nav>
+        </header>
+
+        <main class="main">
+            <div class="status-container">
+                <div class="card">
+                    <div class="card-header">
+                        <i class="fas fa-chart-line"></i>
+                        <h2>Plant Status Overview</h2>
+                    </div>
+                    <div class="card-content">
+                        {% if plants %}
+                        <div class="plants-grid">
+                            {% for plant in plants %}
+                            <div class="plant-card {% if plant.status == 'alert' %}alert{% elif plant.status == 'warning' %}warning{% else %}healthy{% endif %}">
+                                <div class="plant-header">
+                                    <h3>{{ plant.name }}</h3>
+                                    <span class="status-badge {{ plant.status }}">
+                                        {% if plant.status == 'alert' %}
+                                            <i class="fas fa-exclamation-triangle"></i> Alert
+                                        {% elif plant.status == 'warning' %}
+                                            <i class="fas fa-exclamation-circle"></i> Warning
+                                        {% else %}
+                                            <i class="fas fa-check-circle"></i> Healthy
+                                        {% endif %}
+                                    </span>
+                                </div>
+                                
+                                <div class="plant-details">
+                                    <p><strong>Species:</strong> {{ plant.species }}</p>
+                                    <p><strong>Location:</strong> {{ plant.location }}</p>
+                                    <p><strong>Owner:</strong> {{ plant.owner_name }}</p>
+                                </div>
+                                
+                                {% if plant.sensor_data %}
+                                <div class="sensor-data">
+                                    <h4>Sensor Readings</h4>
+                                    <div class="sensor-grid">
+                                        <div class="sensor-item">
+                                            <i class="fas fa-thermometer-half"></i>
+                                            <span class="sensor-label">Temperature</span>
+                                            <span class="sensor-value">{{ plant.sensor_data.temperature }}°C</span>
+                                        </div>
+                                        <div class="sensor-item">
+                                            <i class="fas fa-tint"></i>
+                                            <span class="sensor-label">Humidity</span>
+                                            <span class="sensor-value">{{ plant.sensor_data.humidity }}%</span>
+                                        </div>
+                                        <div class="sensor-item">
+                                            <i class="fas fa-water"></i>
+                                            <span class="sensor-label">Soil Moisture</span>
+                                            <span class="sensor-value">{{ plant.sensor_data.soil_moisture }}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                {% endif %}
+                                
+                                {% if plant.recommendations %}
+                                <div class="recommendations">
+                                    <h4>Recommendations</h4>
+                                    <ul>
+                                        {% for rec in plant.recommendations %}
+                                        <li>{{ rec }}</li>
+                                        {% endfor %}
+                                    </ul>
+                                </div>
+                                {% endif %}
+                                
+                                <div class="plant-actions">
+                                    <button class="btn btn-sm btn-primary" onclick="waterPlant('{{ plant.id }}')">
+                                        <i class="fas fa-tint"></i> Water
+                                    </button>
+                                    <button class="btn btn-sm btn-secondary" onclick="toggleLED('{{ plant.id }}')">
+                                        <i class="fas fa-lightbulb"></i> Toggle LED
+                                    </button>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                        {% else %}
+                        <div class="empty-state">
+                            <i class="fas fa-seedling"></i>
+                            <h3>No Plants Found</h3>
+                            <p>No plants are currently registered or assigned to users.</p>
+                            <a href="/register_plant" class="btn btn-primary">
+                                <i class="fas fa-plus"></i> Register a Plant
+                            </a>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+    <script>
+        function waterPlant(plantId) {
+            fetch('/actuator', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    action: 'water',
+                    plant_id: plantId
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert('Watering started for plant ' + plantId);
+                } else {
+                    alert('Error: ' + data.message);
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('Error starting watering');
+            });
+        }
+
+        function toggleLED(plantId) {
+            fetch('/actuator', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    action: 'toggle_led',
+                    plant_id: plantId
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert('LED toggled for plant ' + plantId);
+                } else {
+                    alert('Error: ' + data.message);
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('Error toggling LED');
+            });
+        }
+    </script>
+</body>
+</html> 

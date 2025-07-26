@@ -1,0 +1,462 @@
+[
+    {
+        "species": "Snake Plant",
+        "display_name": "Snake Plant",
+        "default_thresholds": {
+            "temperature": {
+                "min": 10,
+                "max": 30
+            },
+            "humidity": {
+                "min": 30,
+                "max": 50
+            },
+            "soil_moisture": {
+                "min": 250,
+                "max": 600
+            }
+        },
+        "care_info": {
+            "watering_frequency": "Every 2\u20134 weeks",
+            "light": "Low to bright, indirect light",
+            "notes": "Adjust care depending on indoor conditions."
+        }
+    },
+    {
+        "species": "Spider Plant",
+        "display_name": "Spider Plant",
+        "default_thresholds": {
+            "temperature": {
+                "min": 10,
+                "max": 27
+            },
+            "humidity": {
+                "min": 40,
+                "max": 60
+            },
+            "soil_moisture": {
+                "min": 350,
+                "max": 700
+            }
+        },
+        "care_info": {
+            "watering_frequency": "Weekly",
+            "light": "Bright, indirect light",
+            "notes": "Adjust care depending on indoor conditions."
+        }
+    },
+    {
+        "species": "Peace Lily",
+        "display_name": "Peace Lily",
+        "default_thresholds": {
+            "temperature": {
+                "min": 15,
+                "max": 26
+            },
+            "humidity": {
+                "min": 50,
+                "max": 80
+            },
+            "soil_moisture": {
+                "min": 400,
+                "max": 750
+            }
+        },
+        "care_info": {
+            "watering_frequency": "Every 4\u20135 days",
+            "light": "Low to medium light",
+            "notes": "Adjust care depending on indoor conditions."
+        }
+    },
+    {
+        "species": "ZZ Plant",
+        "display_name": "ZZ Plant",
+        "default_thresholds": {
+            "temperature": {
+                "min": 15,
+                "max": 30
+            },
+            "humidity": {
+                "min": 30,
+                "max": 50
+            },
+            "soil_moisture": {
+                "min": 250,
+                "max": 600
+            }
+        },
+        "care_info": {
+            "watering_frequency": "Every 2\u20134 weeks",
+            "light": "Low to medium light",
+            "notes": "Adjust care depending on indoor conditions."
+        }
+    },
+    {
+        "species": "Aloe Vera",
+        "display_name": "Aloe Vera",
+        "default_thresholds": {
+            "temperature": {
+                "min": 13,
+                "max": 27
+            },
+            "humidity": {
+                "min": 30,
+                "max": 50
+            },
+            "soil_moisture": {
+                "min": 250,
+                "max": 600
+            }
+        },
+        "care_info": {
+            "watering_frequency": "Every 2\u20134 weeks",
+            "light": "Bright, direct light",
+            "notes": "Adjust care depending on indoor conditions."
+        }
+    },
+    {
+        "species": "Pothos (Epipremnum)",
+        "display_name": "Pothos (Epipremnum)",
+        "default_thresholds": {
+            "temperature": {
+                "min": 12,
+                "max": 30
+            },
+            "humidity": {
+                "min": 40,
+                "max": 60
+            },
+            "soil_moisture": {
+                "min": 350,
+                "max": 700
+            }
+        },
+        "care_info": {
+            "watering_frequency": "Weekly",
+            "light": "Low to bright, indirect light",
+            "notes": "Adjust care depending on indoor conditions."
+        }
+    },
+    {
+        "species": "Rubber Plant",
+        "display_name": "Rubber Plant",
+        "default_thresholds": {
+            "temperature": {
+                "min": 15,
+                "max": 29
+            },
+            "humidity": {
+                "min": 40,
+                "max": 60
+            },
+            "soil_moisture": {
+                "min": 350,
+                "max": 700
+            }
+        },
+        "care_info": {
+            "watering_frequency": "Weekly",
+            "light": "Bright, indirect light",
+            "notes": "Adjust care depending on indoor conditions."
+        }
+    },
+    {
+        "species": "Fiddle Leaf Fig",
+        "display_name": "Fiddle Leaf Fig",
+        "default_thresholds": {
+            "temperature": {
+                "min": 16,
+                "max": 29
+            },
+            "humidity": {
+                "min": 50,
+                "max": 70
+            },
+            "soil_moisture": {
+                "min": 350,
+                "max": 700
+            }
+        },
+        "care_info": {
+            "watering_frequency": "Weekly",
+            "light": "Bright, indirect light",
+            "notes": "Adjust care depending on indoor conditions."
+        }
+    },
+    {
+        "species": "Monstera Deliciosa",
+        "display_name": "Monstera Deliciosa",
+        "default_thresholds": {
+            "temperature": {
+                "min": 15,
+                "max": 30
+            },
+            "humidity": {
+                "min": 60,
+                "max": 80
+            },
+            "soil_moisture": {
+                "min": 350,
+                "max": 700
+            }
+        },
+        "care_info": {
+            "watering_frequency": "Weekly",
+            "light": "Medium to bright, indirect light",
+            "notes": "Adjust care depending on indoor conditions."
+        }
+    },
+    {
+        "species": "Dracaena",
+        "display_name": "Dracaena",
+        "default_thresholds": {
+            "temperature": {
+                "min": 15,
+                "max": 27
+            },
+            "humidity": {
+                "min": 40,
+                "max": 60
+            },
+            "soil_moisture": {
+                "min": 300,
+                "max": 650
+            }
+        },
+        "care_info": {
+            "watering_frequency": "Every 2\u20133 weeks",
+            "light": "Low to bright, indirect light",
+            "notes": "Adjust care depending on indoor conditions."
+        }
+    },
+    {
+        "species": "Philodendron",
+        "display_name": "Philodendron",
+        "default_thresholds": {
+            "temperature": {
+                "min": 15,
+                "max": 30
+            },
+            "humidity": {
+                "min": 60,
+                "max": 80
+            },
+            "soil_moisture": {
+                "min": 350,
+                "max": 700
+            }
+        },
+        "care_info": {
+            "watering_frequency": "Weekly",
+            "light": "Low to bright, indirect light",
+            "notes": "Adjust care depending on indoor conditions."
+        }
+    },
+    {
+        "species": "Boston Fern",
+        "display_name": "Boston Fern",
+        "default_thresholds": {
+            "temperature": {
+                "min": 12,
+                "max": 24
+            },
+            "humidity": {
+                "min": 50,
+                "max": 80
+            },
+            "soil_moisture": {
+                "min": 450,
+                "max": 800
+            }
+        },
+        "care_info": {
+            "watering_frequency": "Every 2\u20133 days",
+            "light": "Indirect light",
+            "notes": "Adjust care depending on indoor conditions."
+        }
+    },
+    {
+        "species": "Calathea",
+        "display_name": "Calathea",
+        "default_thresholds": {
+            "temperature": {
+                "min": 15,
+                "max": 27
+            },
+            "humidity": {
+                "min": 60,
+                "max": 80
+            },
+            "soil_moisture": {
+                "min": 450,
+                "max": 800
+            }
+        },
+        "care_info": {
+            "watering_frequency": "Every 2\u20133 days",
+            "light": "Indirect light",
+            "notes": "Adjust care depending on indoor conditions."
+        }
+    },
+    {
+        "species": "Dieffenbachia",
+        "display_name": "Dieffenbachia",
+        "default_thresholds": {
+            "temperature": {
+                "min": 15,
+                "max": 27
+            },
+            "humidity": {
+                "min": 60,
+                "max": 80
+            },
+            "soil_moisture": {
+                "min": 350,
+                "max": 700
+            }
+        },
+        "care_info": {
+            "watering_frequency": "Weekly",
+            "light": "Medium light",
+            "notes": "Adjust care depending on indoor conditions."
+        }
+    },
+    {
+        "species": "Croton",
+        "display_name": "Croton",
+        "default_thresholds": {
+            "temperature": {
+                "min": 16,
+                "max": 29
+            },
+            "humidity": {
+                "min": 40,
+                "max": 60
+            },
+            "soil_moisture": {
+                "min": 350,
+                "max": 700
+            }
+        },
+        "care_info": {
+            "watering_frequency": "Weekly",
+            "light": "Bright light",
+            "notes": "Adjust care depending on indoor conditions."
+        }
+    },
+    {
+        "species": "Jade Plant",
+        "display_name": "Jade Plant",
+        "default_thresholds": {
+            "temperature": {
+                "min": 10,
+                "max": 27
+            },
+            "humidity": {
+                "min": 30,
+                "max": 50
+            },
+            "soil_moisture": {
+                "min": 250,
+                "max": 600
+            }
+        },
+        "care_info": {
+            "watering_frequency": "Every 2\u20134 weeks",
+            "light": "Bright light",
+            "notes": "Adjust care depending on indoor conditions."
+        }
+    },
+    {
+        "species": "Areca Palm",
+        "display_name": "Areca Palm",
+        "default_thresholds": {
+            "temperature": {
+                "min": 18,
+                "max": 28
+            },
+            "humidity": {
+                "min": 40,
+                "max": 60
+            },
+            "soil_moisture": {
+                "min": 350,
+                "max": 700
+            }
+        },
+        "care_info": {
+            "watering_frequency": "Weekly",
+            "light": "Bright, indirect light",
+            "notes": "Adjust care depending on indoor conditions."
+        }
+    },
+    {
+        "species": "Chinese Evergreen",
+        "display_name": "Chinese Evergreen",
+        "default_thresholds": {
+            "temperature": {
+                "min": 15,
+                "max": 27
+            },
+            "humidity": {
+                "min": 50,
+                "max": 60
+            },
+            "soil_moisture": {
+                "min": 350,
+                "max": 700
+            }
+        },
+        "care_info": {
+            "watering_frequency": "Weekly",
+            "light": "Low to bright, indirect light",
+            "notes": "Adjust care depending on indoor conditions."
+        }
+    },
+    {
+        "species": "Anthurium",
+        "display_name": "Anthurium",
+        "default_thresholds": {
+            "temperature": {
+                "min": 16,
+                "max": 30
+            },
+            "humidity": {
+                "min": 60,
+                "max": 80
+            },
+            "soil_moisture": {
+                "min": 350,
+                "max": 700
+            }
+        },
+        "care_info": {
+            "watering_frequency": "Weekly",
+            "light": "Bright, indirect light",
+            "notes": "Adjust care depending on indoor conditions."
+        }
+    },
+    {
+        "species": "Prayer Plant (Maranta)",
+        "display_name": "Prayer Plant (Maranta)",
+        "default_thresholds": {
+            "temperature": {
+                "min": 15,
+                "max": 26
+            },
+            "humidity": {
+                "min": 60,
+                "max": 80
+            },
+            "soil_moisture": {
+                "min": 400,
+                "max": 750
+            }
+        },
+        "care_info": {
+            "watering_frequency": "Every 4\u20135 days",
+            "light": "Indirect light",
+            "notes": "Adjust care depending on indoor conditions."
+        }
+    }
+]

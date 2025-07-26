@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Register Plant (Advanced) - Smart Plant Care</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <h1><i class="fas fa-seedling"></i> Smart Plant Care Dashboard</h1>
+            <nav class="nav">
+                <a href="/" class="nav-link"><i class="fas fa-home"></i> Dashboard</a>
+                <a href="/register_user" class="nav-link"><i class="fas fa-user-plus"></i> Register User</a>
+                <a href="/register_plant" class="nav-link"><i class="fas fa-leaf"></i> Register Plant</a>
+                <a href="/register_plant_advanced" class="nav-link active"><i class="fas fa-database"></i> Advanced Plant</a>
+                <a href="/assign_plant" class="nav-link"><i class="fas fa-link"></i> Assign Plant</a>
+                <a href="/plant_status" class="nav-link"><i class="fas fa-chart-line"></i> Plant Status</a>
+            </nav>
+        </header>
+
+        <main class="main">
+            <div class="form-container">
+                <div class="card">
+                    <div class="card-header">
+                        <i class="fas fa-database"></i>
+                        <h2>Register Plant (Advanced)</h2>
+                    </div>
+                    <div class="card-content">
+                        {% if message %}
+                        <div class="alert alert-success">
+                            <i class="fas fa-check-circle"></i>
+                            {{ message }}
+                        </div>
+                        {% endif %}
+                        
+                        <form method="post" id="plantForm" class="form">
+                            <div class="form-group">
+                                <label for="plant_type_idx">
+                                    <i class="fas fa-seedling"></i> Plant Type
+                                </label>
+                                <select name="plant_type_idx" id="plant_type_idx" required onchange="fillDetails()" class="form-control">
+                                    <option value="">Select a plant type</option>
+                                    {% for pt in plant_types %}
+                                    <option value="{{ loop.index0 }}">{{ pt.display_name }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label for="location">
+                                    <i class="fas fa-map-marker-alt"></i> Location
+                                </label>
+                                <input type="text" id="location" name="location" required 
+                                       placeholder="Enter plant location" class="form-control">
+                            </div>
+                            
+                            <div class="form-group">
+                                <label for="user_id">
+                                    <i class="fas fa-user"></i> User
+                                </label>
+                                <select name="user_id" id="user_id" required class="form-control">
+                                    <option value="">Select a user</option>
+                                    {% for user in users %}
+                                    <option value="{{ user.id }}">{{ user.display_name or user.username }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            
+                            <div id="details" class="plant-details-panel"></div>
+                            
+                            <div class="form-actions">
+                                <button type="submit" class="btn btn-primary">
+                                    <i class="fas fa-save"></i> Register Plant
+                                </button>
+                                <a href="/" class="btn btn-secondary">
+                                    <i class="fas fa-arrow-left"></i> Back to Dashboard
+                                </a>
+                            </div>
+                        </form>
+                        
+                        {% if users and plants %}
+                        <div class="info-section">
+                            <h3><i class="fas fa-info-circle"></i> Users and Their Plants</h3>
+                            <div class="table-responsive">
+                                <table class="info-table">
+                                    <thead>
+                                        <tr>
+                                            <th>User</th>
+                                            <th>Plant Name</th>
+                                            <th>Species</th>
+                                            <th>Location</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for user in users %}
+                                            {% set user_plants = plants|selectattr('user_id', 'equalto', user.id)|list %}
+                                            {% if user_plants %}
+                                                {% for plant in user_plants %}
+                                                <tr>
+                                                    <td>{{ user.display_name or user.username }}</td>
+                                                    <td>{{ plant.name }}</td>
+                                                    <td>{{ plant.species }}</td>
+                                                    <td>{{ plant.location }}</td>
+                                                </tr>
+                                                {% endfor %}
+                                            {% else %}
+                                                <tr>
+                                                    <td>{{ user.display_name or user.username }}</td>
+                                                    <td colspan="3"><i>No plants assigned</i></td>
+                                                </tr>
+                                            {% endif %}
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        const plantTypes = {{ plant_types|tojson }};
+        
+        function fillDetails() {
+            const idx = document.getElementById('plant_type_idx').value;
+            const detailsDiv = document.getElementById('details');
+            
+            if (idx !== '') {
+                const pt = plantTypes[idx];
+                let html = '<div class="plant-info-card">';
+                html += '<h4><i class="fas fa-info-circle"></i> Plant Information</h4>';
+                html += '<div class="plant-info-grid">';
+                html += '<div class="info-item"><strong>Species:</strong> ' + pt.species + '</div>';
+                html += '<div class="info-item"><strong>Temperature:</strong> ' + pt.default_thresholds.temperature.min + '–' + pt.default_thresholds.temperature.max + ' °C</div>';
+                html += '<div class="info-item"><strong>Humidity:</strong> ' + pt.default_thresholds.humidity.min + '–' + pt.default_thresholds.humidity.max + ' %</div>';
+                html += '<div class="info-item"><strong>Soil Moisture:</strong> ' + pt.default_thresholds.soil_moisture.min + '–' + pt.default_thresholds.soil_moisture.max + '</div>';
+                html += '<div class="info-item"><strong>Watering:</strong> ' + pt.care_info.watering_frequency + '</div>';
+                html += '<div class="info-item"><strong>Light:</strong> ' + pt.care_info.light + '</div>';
+                html += '<div class="info-item"><strong>Notes:</strong> ' + pt.care_info.notes + '</div>';
+                html += '</div></div>';
+                detailsDiv.innerHTML = html;
+            } else {
+                detailsDiv.innerHTML = '';
+            }
+        }
+    </script>
+</body>
+</html> 

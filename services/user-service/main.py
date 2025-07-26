@@ -10,7 +10,8 @@ from db import init_db, ensure_db
 init_db()
 ensure_db()
 
-from telegram_bot import start_bot, app  # import the Flask app
+from telegram_bot import start_bot
+from dashboard import app  # import the dashboard Flask app
 from notifier import send_alert
 
 logging.basicConfig(level=logging.INFO, format='[%(asctime)s] %(levelname)s: %(message)s')

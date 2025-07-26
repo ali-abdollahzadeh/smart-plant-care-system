@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Assign Plant - Smart Plant Care</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <h1><i class="fas fa-seedling"></i> Smart Plant Care Dashboard</h1>
+            <nav class="nav">
+                <a href="/" class="nav-link"><i class="fas fa-home"></i> Dashboard</a>
+                <a href="/register_user" class="nav-link"><i class="fas fa-user-plus"></i> Register User</a>
+                <a href="/register_plant" class="nav-link"><i class="fas fa-leaf"></i> Register Plant</a>
+                <a href="/assign_plant" class="nav-link active"><i class="fas fa-link"></i> Assign Plant</a>
+                <a href="/plant_status" class="nav-link"><i class="fas fa-chart-line"></i> Plant Status</a>
+            </nav>
+        </header>
+
+        <main class="main">
+            <div class="form-container">
+                <div class="card">
+                    <div class="card-header">
+                        <i class="fas fa-link"></i>
+                        <h2>Assign Plant to User</h2>
+                    </div>
+                    <div class="card-content">
+                        {% if message %}
+                        <div class="alert alert-success">
+                            <i class="fas fa-check-circle"></i>
+                            {{ message }}
+                        </div>
+                        {% endif %}
+                        
+                        {% if error %}
+                        <div class="alert alert-error">
+                            <i class="fas fa-exclamation-triangle"></i>
+                            {{ error }}
+                        </div>
+                        {% endif %}
+                        
+                        <form method="post" class="form">
+                            <div class="form-group">
+                                <label for="user_id">
+                                    <i class="fas fa-user"></i> User
+                                </label>
+                                <select name="user_id" id="user_id" required class="form-control">
+                                    <option value="">Select a user</option>
+                                    {% for user in users %}
+                                    <option value="{{ user.id }}">{{ user.display_name or user.username }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label for="plant_id">
+                                    <i class="fas fa-seedling"></i> Plant
+                                </label>
+                                <select name="plant_id" id="plant_id" required class="form-control">
+                                    <option value="">Select a plant</option>
+                                    {% for plant in plants %}
+                                    <option value="{{ plant.id }}">{{ plant.name }} ({{ plant.species }})</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            
+                            <div class="form-actions">
+                                <button type="submit" class="btn btn-primary">
+                                    <i class="fas fa-link"></i> Assign Plant
+                                </button>
+                                <a href="/" class="btn btn-secondary">
+                                    <i class="fas fa-arrow-left"></i> Back to Dashboard
+                                </a>
+                            </div>
+                        </form>
+                        
+                        {% if users and plants %}
+                        <div class="info-section">
+                            <h3><i class="fas fa-info-circle"></i> Available Users and Plants</h3>
+                            <div class="info-grid">
+                                <div class="info-card">
+                                    <h4>Users ({{ users|length }})</h4>
+                                    <ul>
+                                        {% for user in users %}
+                                        <li>{{ user.display_name or user.username }}</li>
+                                        {% endfor %}
+                                    </ul>
+                                </div>
+                                <div class="info-card">
+                                    <h4>Plants ({{ plants|length }})</h4>
+                                    <ul>
+                                        {% for plant in plants %}
+                                        <li>{{ plant.name }} - {{ plant.species }}</li>
+                                        {% endfor %}
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+</body>
+</html> 

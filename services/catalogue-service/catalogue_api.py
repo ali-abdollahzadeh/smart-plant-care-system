@@ -244,133 +244,31 @@ def list_active_plants():
     conn.close()
     return jsonify(plants)
 
+@app.route('/plant_types', methods=['GET'])
+def get_plant_types():
+    """Get available plant types from the database"""
+    try:
+        with open(os.path.join(os.path.dirname(__file__), 'home_plants_database.json'), 'r') as f:
+            plant_types = json.load(f)
+        return jsonify(plant_types)
+    except Exception as e:
+        logging.error(f"Error loading plant types: {e}")
+        return jsonify([])
+
 @app.route('/register_plant', methods=['GET', 'POST'])
 def register_plant_form():
-    # Load plant types from home_plants_database.json
-    with open(os.path.join(os.path.dirname(__file__), 'home_plants_database.json'), 'r') as f:
-        plant_types = json.load(f)
-    conn = get_db()
-    c = conn.cursor()
-    c.execute('SELECT * FROM users')
-    users = [dict(row) for row in c.fetchall()]
-    c.execute('SELECT * FROM plants')
-    plants = [dict(row) for row in c.fetchall()]
-    conn.close()
-    user_map = {u['id']: u for u in users}
-    # Map user_id to list of plants
-    user_plants = {}
-    for p in plants:
-        if p['user_id']:
-            user_plants.setdefault(p['user_id'], []).append(p)
-    if request.method == 'POST':
-        plant_type_idx = int(request.form.get('plant_type_idx'))
-        plant_type = plant_types[plant_type_idx]
-        name = plant_type['display_name']
-        species = plant_type['species']
-        location = request.form.get('location')
-        user_id = request.form.get('user_id')
-        thresholds = plant_type['default_thresholds']
-        care_info = plant_type['care_info']
-        plant_id = str(uuid.uuid4())
-        conn = get_db()
-        c = conn.cursor()
-        c.execute('INSERT INTO plants (id, name, species, location, thresholds, care_info, user_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
-                  (plant_id, name, species, location, str(thresholds), str(care_info), user_id))
-        conn.commit()
-        conn.close()
-        return redirect(url_for('register_plant_success'))
-    # Render form and user-plant table
-    return render_template_string('''
-        <h2>Register a New Plant</h2>
-        <form method="post" id="plantForm">
-            <label>Plant Type:
-                <select name="plant_type_idx" id="plant_type_idx" required onchange="fillDetails()">
-                    <option value="">Select a plant type</option>
-                    {% for pt in plant_types %}
-                        <option value="{{loop.index0}}">{{pt['display_name']}}</option>
-                    {% endfor %}
-                </select>
-            </label><br>
-            <label>Location: <input name="location" required></label><br>
-            <label>User:
-                <select name="user_id" required>
-                    <option value="">Select a user</option>
-                    {% for user in users %}
-                        <option value="{{user['id']}}">{{user['display_name'] or user['username']}}</option>
-                    {% endfor %}
-                </select>
-            </label><br>
-            <div id="details"></div>
-            <button type="submit">Register Plant</button>
-        </form>
-        <p><a href="/register_user">Register a new user</a></p>
-        <h3>Users and Their Plants</h3>
-        <table border="1" cellpadding="4">
-            <tr><th>User</th><th>Plant Name</th><th>Species</th><th>Location</th></tr>
-            {% for user in users %}
-                {% set plants = user_plants.get(user['id'], []) %}
-                {% if plants %}
-                    {% for plant in plants %}
-                        <tr>
-                            <td>{{user['display_name'] or user['username']}}</td>
-                            <td>{{plant['name']}}</td>
-                            <td>{{plant['species']}}</td>
-                            <td>{{plant['location']}}</td>
-                        </tr>
-                    {% endfor %}
-                {% else %}
-                    <tr>
-                        <td>{{user['display_name'] or user['username']}}</td>
-                        <td colspan="3"><i>No plants assigned</i></td>
-                    </tr>
-                {% endif %}
-            {% endfor %}
-        </table>
-        <script>
-        const plantTypes = {{ plant_types|tojson }};
-        function fillDetails() {
-            const idx = document.getElementById('plant_type_idx').value;
-            let html = '';
-            if (idx !== '') {
-                const pt = plantTypes[idx];
-                html += `<b>Species:</b> ${pt.species}<br>`;
-                html += `<b>Temperature:</b> ${pt.default_thresholds.temperature.min}–${pt.default_thresholds.temperature.max} °C<br>`;
-                html += `<b>Humidity:</b> ${pt.default_thresholds.humidity.min}–${pt.default_thresholds.humidity.max} %<br>`;
-                html += `<b>Soil Moisture:</b> ${pt.default_thresholds.soil_moisture.min}–${pt.default_thresholds.soil_moisture.max}<br>`;
-                html += `<b>Watering:</b> ${pt.care_info.watering_frequency}<br>`;
-                html += `<b>Light:</b> ${pt.care_info.light}<br>`;
-                html += `<b>Notes:</b> ${pt.care_info.notes}<br>`;
-            }
-            document.getElementById('details').innerHTML = html;
-        }
-        </script>
-    ''', plant_types=plant_types, users=users, user_plants=user_plants)
+    """Redirect to dashboard for plant registration"""
+    return redirect('http://localhost:5500/register_plant_advanced')
 
 @app.route('/register_user', methods=['GET', 'POST'])
 def register_user_form():
-    if request.method == 'POST':
-        username = request.form.get('username')
-        display_name = request.form.get('display_name')
-        user_id = str(uuid.uuid4())
-        conn = get_db()
-        c = conn.cursor()
-        c.execute('INSERT INTO users (id, username, display_name) VALUES (?, ?, ?)',
-                  (user_id, username, display_name))
-        conn.commit()
-        conn.close()
-        return redirect(url_for('register_user_success'))
-    return render_template_string('''
-        <h2>Register a New User</h2>
-        <form method="post">
-            <label>Username: <input name="username" required></label><br>
-            <label>Display Name: <input name="display_name"></label><br>
-            <button type="submit">Register User</button>
-        </form>
-    ''')
+    """Redirect to dashboard for user registration"""
+    return redirect('http://localhost:5500/register_user')
 
 @app.route('/register_user_success')
 def register_user_success():
-    return '<h3>User registered successfully!</h3><a href="/register_user">Register another</a> | <a href="/register_plant">Register a plant</a>'
+    """Redirect to dashboard success page"""
+    return redirect('http://localhost:5500/register_user')
 
 @app.route('/health', methods=['GET'])
 def health_check():

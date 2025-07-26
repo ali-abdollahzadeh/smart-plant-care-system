@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Register User - Smart Plant Care</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <h1><i class="fas fa-seedling"></i> Smart Plant Care Dashboard</h1>
+            <nav class="nav">
+                <a href="/" class="nav-link"><i class="fas fa-home"></i> Dashboard</a>
+                <a href="/register_user" class="nav-link active"><i class="fas fa-user-plus"></i> Register User</a>
+                <a href="/register_plant" class="nav-link"><i class="fas fa-leaf"></i> Register Plant</a>
+                <a href="/assign_plant" class="nav-link"><i class="fas fa-link"></i> Assign Plant</a>
+                <a href="/plant_status" class="nav-link"><i class="fas fa-chart-line"></i> Plant Status</a>
+            </nav>
+        </header>
+
+        <main class="main">
+            <div class="form-container">
+                <div class="card">
+                    <div class="card-header">
+                        <i class="fas fa-user-plus"></i>
+                        <h2>Register a New User</h2>
+                    </div>
+                    <div class="card-content">
+                        {% if message %}
+                        <div class="alert alert-success">
+                            <i class="fas fa-check-circle"></i>
+                            {{ message }}
+                        </div>
+                        {% endif %}
+                        
+                        <form method="post" class="form">
+                            <div class="form-group">
+                                <label for="username">
+                                    <i class="fas fa-user"></i> Username
+                                </label>
+                                <input type="text" id="username" name="username" required 
+                                       placeholder="Enter username" class="form-control">
+                            </div>
+                            
+                            <div class="form-group">
+                                <label for="display_name">
+                                    <i class="fas fa-id-card"></i> Display Name
+                                </label>
+                                <input type="text" id="display_name" name="display_name" 
+                                       placeholder="Enter display name" class="form-control">
+                            </div>
+                            
+                            <div class="form-group">
+                                <label for="telegram_id">
+                                    <i class="fab fa-telegram"></i> Telegram ID (Optional)
+                                </label>
+                                <input type="text" id="telegram_id" name="telegram_id" 
+                                       placeholder="Enter Telegram ID" class="form-control">
+                            </div>
+                            
+                            <div class="form-actions">
+                                <button type="submit" class="btn btn-primary">
+                                    <i class="fas fa-save"></i> Register User
+                                </button>
+                                <a href="/" class="btn btn-secondary">
+                                    <i class="fas fa-arrow-left"></i> Back to Dashboard
+                                </a>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+</body>
+</html> 
