@@ -1,16 +1,3 @@
-"""
-Telegram Bot for Smart Plant System
-
-Commands:
-- /status: Get latest plant data
-- /recommend: Get care recommendations
-- /water: Start watering (actuator control)
-- /led_on: Turn LED ON (actuator control)
-- /led_off: Turn LED OFF (actuator control)
-- /actuator_status: Get current actuator state
-
-Actuator commands interact with the sensor service REST API (port 5500).
-"""
 import logging
 import requests
 import os
