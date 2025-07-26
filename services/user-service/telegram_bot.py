@@ -24,7 +24,7 @@ import db
 from telegram.error import BadRequest
 from db import add_user, get_user_by_telegram_id, get_plants_for_user, get_all_plants, assign_plant_to_user
 
-CONFIG_PATH = os.environ.get("CONFIG_PATH", "../shared/config/global_config.yaml")
+CONFIG_PATH = os.environ.get("CONFIG_PATH", "config.yaml")
 with open(CONFIG_PATH, 'r') as f:
     config = yaml.safe_load(f)
 
