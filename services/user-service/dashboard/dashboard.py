@@ -5,11 +5,9 @@ import requests
 import json
 import ast
 from flask import Flask, render_template, request, redirect, url_for, jsonify
-from db import init_db, ensure_db, get_connection, add_user, get_user_by_telegram_id
+from db import init_db, ensure_db, add_user, get_user_by_telegram_id, execute_query
 
-# Initialize database
-init_db()
-ensure_db()
+# Database initialization is handled in main.py
 
 app = Flask(__name__, template_folder='templates', static_folder='static')
 
@@ -28,17 +26,15 @@ logging.basicConfig(level=logging.INFO, format='[%(asctime)s] %(levelname)s: %(m
 def dashboard():
     """Main dashboard page"""
     try:
-        # Get statistics
-        with get_connection() as conn:
-            c = conn.cursor()
-            c.execute('SELECT COUNT(*) FROM users')
-            user_count = c.fetchone()[0]
-            
-            c.execute('SELECT COUNT(*) FROM plants')
-            plant_count = c.fetchone()[0]
-            
-            c.execute('SELECT COUNT(*) FROM plants WHERE active = 1')
-            active_plants = c.fetchone()[0]
+        # Get statistics using new database methods
+        user_result = execute_query('SELECT COUNT(*) as count FROM users')
+        user_count = user_result[0]['count'] if user_result else 0
+        
+        plant_result = execute_query('SELECT COUNT(*) as count FROM plants')
+        plant_count = plant_result[0]['count'] if plant_result else 0
+        
+        active_plants_result = execute_query('SELECT COUNT(*) as count FROM plants WHERE active = TRUE')
+        active_plants = active_plants_result[0]['count'] if active_plants_result else 0
         
         # Get alerts count (placeholder for now)
         alerts_count = 0
@@ -98,11 +94,9 @@ def register_plant():
     message = None
     
     try:
-        # Fetch users from DB
-        with get_connection() as conn:
-            c = conn.cursor()
-            c.execute('SELECT id, name, telegram_id FROM users')
-            users = c.fetchall()
+        # Fetch users from DB using new database methods
+        users_result = execute_query('SELECT id, display_name as name, telegram_id FROM users')
+        users = users_result if users_result else []
     except Exception as e:
         logging.error(f"Error fetching users: {e}")
         users = []
@@ -123,8 +117,8 @@ def register_plant():
                 thresholds_dict = json.loads(thresholds)
             
             # Register plant in local database
-            from telegram_bot import register_plant_for_user
-            register_plant_for_user(user_id, name, type_, str(thresholds_dict), species, location)
+            from db import add_plant
+            add_plant(name, species, location, str(thresholds_dict), None, user_id)
             
             # Also register in catalogue service
             try:
@@ -213,8 +207,8 @@ def register_plant_advanced():
             if resp.status_code == 201:
                 # Also register in local database
                 try:
-                    from telegram_bot import register_plant_for_user
-                    register_plant_for_user(user_id, name, "database", str(thresholds), species, location)
+                    from db import add_plant
+                    add_plant(name, species, location, str(thresholds), None, user_id)
                 except Exception as e:
                     logging.error(f"Could not register plant in local DB: {e}")
                 

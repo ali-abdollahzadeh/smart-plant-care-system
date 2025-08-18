@@ -11,7 +11,6 @@ init_db()
 ensure_db()
 
 from bot.telegram_bot import start_bot
-from dashboard.dashboard import app  # import the dashboard Flask app
 from bot.notifier import send_alert
 
 logging.basicConfig(level=logging.INFO, format='[%(asctime)s] %(levelname)s: %(message)s')
@@ -66,6 +65,9 @@ def start_mqtt_listener():
             logging.error(f"MQTT connection error: {e}")
 
 if __name__ == '__main__':
+    # Import dashboard after database initialization
+    from dashboard.dashboard import app
+    
     threading.Thread(target=start_mqtt_listener, daemon=True).start()
     threading.Thread(target=lambda: app.run(host='0.0.0.0', port=5500), daemon=True).start()
     start_bot()  # Run the Telegram bot in the main thread

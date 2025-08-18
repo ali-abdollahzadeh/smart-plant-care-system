@@ -194,16 +194,28 @@ def poll_and_simulate_all_plants():
             try:
                 plants = resp.json()
                 logging.info(f"Catalogue returned {len(plants)} plants: {plants}")
+                
+                # Check if the response is an error message
+                if isinstance(plants, dict) and 'error' in plants:
+                    logging.error(f"Catalogue service error: {plants['error']}")
+                    plants = []
+                elif not isinstance(plants, list):
+                    logging.error(f"Unexpected response format from catalogue: {type(plants)}")
+                    plants = []
+                    
             except Exception as e:
                 logging.error(f"Failed to parse catalogue response as JSON: {e}, text: {resp.text}")
                 plants = []
             if not plants:
                 logging.warning("No plants found in catalogue. No simulation will start.")
             for plant in plants:
-                if plant['id'] not in known_ids:
-                    logging.info(f"Starting simulation for plant_id: {plant['id']}")
-                    start_plant_simulation(plant)
-                    known_ids.add(plant['id'])
+                if isinstance(plant, dict) and 'id' in plant:
+                    if plant['id'] not in known_ids:
+                        logging.info(f"Starting simulation for plant_id: {plant['id']}")
+                        start_plant_simulation(plant)
+                        known_ids.add(plant['id'])
+                else:
+                    logging.warning(f"Skipping invalid plant data: {plant}")
             logging.info(f"Currently simulating plant_ids: {list(known_ids)}")
         except Exception as e:
             logging.error(f"FATAL error in poll_and_simulate_all_plants: {e}\n{traceback.format_exc()}")
