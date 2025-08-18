@@ -1,304 +1,586 @@
 from flask import Flask, request, jsonify, abort, render_template_string, redirect, url_for
 import uuid
-import sqlite3
 import os
 import json
+import logging
+from database.postgres import execute_query, test_connection
 
 app = Flask(__name__)
-DB_PATH = os.environ.get("CATALOGUE_DB_PATH", "/app/data/catalogue_data.db")
 
-def get_db():
-    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-# Initialize the local SQLite database
+def convert_real_dict_rows(data):
+    """Convert RealDictRow objects to regular dictionaries"""
+    if isinstance(data, list):
+        return [dict(row) for row in data]
+    elif hasattr(data, '__dict__'):
+        return dict(data)
+    else:
+        return data
+
 def init_db():
-    conn = get_db()
-    c = conn.cursor()
-    c.execute('''CREATE TABLE IF NOT EXISTS devices (
-        id TEXT PRIMARY KEY,
-        name TEXT,
-        type TEXT,
-        config TEXT
-    )''')
-    c.execute('''CREATE TABLE IF NOT EXISTS services (
-        id TEXT PRIMARY KEY,
-        name TEXT,
-        type TEXT,
-        config TEXT
-    )''')
-    c.execute('''CREATE TABLE IF NOT EXISTS users (
-        id TEXT PRIMARY KEY,
-        username TEXT,
-        display_name TEXT,
-        active INTEGER DEFAULT 0
-    )''')
-    c.execute('''CREATE TABLE IF NOT EXISTS plants (
-        id TEXT PRIMARY KEY,
-        name TEXT,
-        species TEXT,
-        location TEXT,
-        thresholds TEXT,
-        care_info TEXT,
-        user_id TEXT
-    )''')
-    conn.commit()
-    conn.close()
+    """Initialize database schema - now handled by migrations"""
+    try:
+        if test_connection():
+            logger.info("Database connection successful")
+            return True
+        else:
+            logger.error("Database connection failed")
+            return False
+    except Exception as e:
+        logger.error(f"Database initialization failed: {e}")
+        return False
 
+# Initialize database on startup
 init_db()
-
-# Auto import plants if the database is empty
-def auto_import_plants_if_empty():
-    conn = get_db()
-    c = conn.cursor()
-    c.execute('SELECT COUNT(*) FROM plants')
-    count = c.fetchone()[0]
-    if count == 0:
-        json_path = os.path.join(os.path.dirname(__file__), 'home_plants_database.json')
-        with open(json_path, 'r', encoding='utf-8') as f:
-            plant_types = json.load(f)
-        for pt in plant_types:
-            name = pt.get('display_name', pt.get('species', 'Unknown'))
-            species = pt.get('species', 'Unknown')
-            location = 'Default'
-            thresholds = json.dumps(pt.get('default_thresholds', {}))
-            care_info = json.dumps(pt.get('care_info', {}))
-            plant_id = str(uuid.uuid4())
-            c.execute('INSERT INTO plants (id, name, species, location, thresholds, care_info, user_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
-                      (plant_id, name, species, location, thresholds, care_info, None))
-        conn.commit()
-    conn.close()
-
-auto_import_plants_if_empty()
 
 @app.route('/devices', methods=['POST'])
 def register_device():
-    data = request.json
-    device_id = str(uuid.uuid4())
-    name = data.get('name')
-    type_ = data.get('type')
-    config = str(data.get('config', {}))
-    conn = get_db()
-    c = conn.cursor()
-    c.execute('INSERT INTO devices (id, name, type, config) VALUES (?, ?, ?, ?)',
-              (device_id, name, type_, config))
-    conn.commit()
-    conn.close()
-    return jsonify({'id': device_id, 'name': name, 'type': type_, 'config': config}), 201
+    """Register a new device"""
+    try:
+        data = request.json
+        device_id = str(uuid.uuid4())
+        name = data.get('name')
+        type_ = data.get('type')
+        config = json.dumps(data.get('config', {}))
+        user_id = data.get('user_id')
+        
+        query = """
+            INSERT INTO devices (id, name, type, config, user_id)
+            VALUES (%s, %s, %s, %s, %s)
+            RETURNING id
+        """
+        result = execute_query(query, (device_id, name, type_, config, user_id))
+        
+        if result:
+            logger.info(f"Registered device: {name} with ID {device_id}")
+            return jsonify({
+                'id': device_id, 
+                'name': name, 
+                'type': type_, 
+                'config': data.get('config', {})
+            }), 201
+        else:
+            return jsonify({'error': 'Failed to register device'}), 500
+            
+    except Exception as e:
+        logger.error(f"Device registration failed: {e}")
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/devices', methods=['GET'])
 def list_devices():
-    conn = get_db()
-    c = conn.cursor()
-    c.execute('SELECT * FROM devices')
-    devices = [dict(row) for row in c.fetchall()]
-    conn.close()
-    return jsonify(devices)
+    """List all devices"""
+    try:
+        query = """
+            SELECT d.*, u.display_name as user_name
+            FROM devices d
+            LEFT JOIN users u ON d.user_id = u.id
+            WHERE d.active = TRUE
+            ORDER BY d.created_at DESC
+        """
+        devices = execute_query(query)
+        
+        # Convert RealDictRow objects to regular dictionaries
+        devices = convert_real_dict_rows(devices)
+        
+        # Convert JSONB config back to dict
+        for device in devices:
+            if device['config']:
+                device['config'] = json.loads(device['config'])
+        
+        return jsonify(devices)
+        
+    except Exception as e:
+        logger.error(f"Failed to list devices: {e}")
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/devices/<device_id>', methods=['GET'])
 def get_device(device_id):
-    conn = get_db()
-    c = conn.cursor()
-    c.execute('SELECT * FROM devices WHERE id=?', (device_id,))
-    row = c.fetchone()
-    conn.close()
-    if not row:
-        abort(404)
-    return jsonify(dict(row))
+    """Get a specific device"""
+    try:
+        query = """
+            SELECT d.*, u.display_name as user_name
+            FROM devices d
+            LEFT JOIN users u ON d.user_id = u.id
+            WHERE d.id = %s AND d.active = TRUE
+        """
+        result = execute_query(query, (device_id,))
+        
+        if result:
+            device = convert_real_dict_rows(result[0])
+            if device['config']:
+                device['config'] = json.loads(device['config'])
+            return jsonify(device)
+        else:
+            abort(404)
+            
+    except Exception as e:
+        logger.error(f"Failed to get device: {e}")
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/services', methods=['POST'])
 def register_service():
-    data = request.json
-    service_id = str(uuid.uuid4())
-    name = data.get('name')
-    type_ = data.get('type')
-    config = str(data.get('config', {}))
-    conn = get_db()
-    c = conn.cursor()
-    c.execute('INSERT INTO services (id, name, type, config) VALUES (?, ?, ?, ?)',
-              (service_id, name, type_, config))
-    conn.commit()
-    conn.close()
-    return jsonify({'id': service_id, 'name': name, 'type': type_, 'config': config}), 201
+    """Register a new service"""
+    try:
+        data = request.json
+        service_id = str(uuid.uuid4())
+        name = data.get('name')
+        type_ = data.get('type')
+        config = json.dumps(data.get('config', {}))
+        endpoint = data.get('endpoint')
+        
+        query = """
+            INSERT INTO services (id, name, type, config, endpoint)
+            VALUES (%s, %s, %s, %s, %s)
+            RETURNING id
+        """
+        result = execute_query(query, (service_id, name, type_, config, endpoint))
+        
+        if result:
+            logger.info(f"Registered service: {name} with ID {service_id}")
+            return jsonify({
+                'id': service_id, 
+                'name': name, 
+                'type': type_, 
+                'config': data.get('config', {}),
+                'endpoint': endpoint
+            }), 201
+        else:
+            return jsonify({'error': 'Failed to register service'}), 500
+            
+    except Exception as e:
+        logger.error(f"Service registration failed: {e}")
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/services', methods=['GET'])
 def list_services():
-    conn = get_db()
-    c = conn.cursor()
-    c.execute('SELECT * FROM services')
-    services = [dict(row) for row in c.fetchall()]
-    conn.close()
-    return jsonify(services)
+    """List all services"""
+    try:
+        query = """
+            SELECT * FROM services 
+            WHERE active = TRUE
+            ORDER BY created_at DESC
+        """
+        services = execute_query(query)
+        
+        # Convert RealDictRow objects to regular dictionaries
+        services = convert_real_dict_rows(services)
+        
+        # Convert JSONB config back to dict
+        for service in services:
+            if service['config']:
+                service['config'] = json.loads(service['config'])
+        
+        return jsonify(services)
+        
+    except Exception as e:
+        logger.error(f"Failed to list services: {e}")
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/services/<service_id>', methods=['GET'])
 def get_service(service_id):
-    conn = get_db()
-    c = conn.cursor()
-    c.execute('SELECT * FROM services WHERE id=?', (service_id,))
-    row = c.fetchone()
-    conn.close()
-    if not row:
-        abort(404)
-    return jsonify(dict(row))
+    """Get a specific service"""
+    try:
+        query = "SELECT * FROM services WHERE id = %s AND active = TRUE"
+        result = execute_query(query, (service_id,))
+        
+        if result:
+            service = convert_real_dict_rows(result[0])
+            if service['config']:
+                service['config'] = json.loads(service['config'])
+            return jsonify(service)
+        else:
+            abort(404)
+            
+    except Exception as e:
+        logger.error(f"Failed to get service: {e}")
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/plants', methods=['POST'])
 def register_plant():
-    data = request.json
-    plant_id = str(uuid.uuid4())
-    name = data.get('name')
-    species = data.get('species')
-    location = data.get('location')
-    thresholds = str(data.get('thresholds', {}))
-    care_info = str(data.get('care_info', {}))
-    conn = get_db()
-    c = conn.cursor()
-    c.execute('INSERT INTO plants (id, name, species, location, thresholds, care_info) VALUES (?, ?, ?, ?, ?, ?)',
-              (plant_id, name, species, location, thresholds, care_info))
-    conn.commit()
-    conn.close()
-    return jsonify({'id': plant_id, 'name': name, 'species': species, 'location': location, 'thresholds': thresholds, 'care_info': care_info}), 201
+    """Register a new plant"""
+    try:
+        data = request.json
+        plant_id = str(uuid.uuid4())
+        name = data.get('name')
+        species = data.get('species')
+        location = data.get('location')
+        thresholds = json.dumps(data.get('thresholds', {}))
+        care_info = json.dumps(data.get('care_info', {}))
+        user_id = data.get('user_id')
+        
+        # Insert plant without user_id
+        query = """
+            INSERT INTO plants (id, name, species, location, thresholds, care_info)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            RETURNING id
+        """
+        result = execute_query(query, (plant_id, name, species, location, thresholds, care_info))
+        
+        if result:
+            # If user_id is provided, create assignment in user_plants table
+            if user_id:
+                assign_query = """
+                    INSERT INTO user_plants (user_id, plant_id, assigned_at)
+                    VALUES (%s, %s, NOW())
+                """
+                execute_query(assign_query, (user_id, plant_id))
+                logger.info(f"Assigned plant {plant_id} to user {user_id}")
+            
+            logger.info(f"Registered plant: {name} with ID {plant_id}")
+            return jsonify({
+                'id': plant_id,
+                'name': name,
+                'species': species,
+                'location': location,
+                'thresholds': data.get('thresholds', {}),
+                'care_info': data.get('care_info', {}),
+                'user_id': user_id
+            }), 201
+        else:
+            return jsonify({'error': 'Failed to register plant'}), 500
+            
+    except Exception as e:
+        logger.error(f"Plant registration failed: {e}")
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/plants', methods=['GET'])
 def list_plants():
-    conn = get_db()
-    c = conn.cursor()
-    c.execute('SELECT * FROM plants')
-    plants = [dict(row) for row in c.fetchall()]
-    conn.close()
-    return jsonify(plants)
-
-@app.route('/plants/<plant_id>', methods=['GET'])
-def get_plant(plant_id):
-    conn = get_db()
-    c = conn.cursor()
-    c.execute('SELECT * FROM plants WHERE id=?', (plant_id,))
-    row = c.fetchone()
-    conn.close()
-    if not row:
-        abort(404)
-    return jsonify(dict(row))
-
-@app.route('/plants/<plant_id>', methods=['PATCH'])
-def update_plant(plant_id):
-    data = request.json
-    fields = []
-    values = []
-    if 'user_id' in data:
-        fields.append('user_id = ?')
-        values.append(data['user_id'])
-    # Optionally allow updating other fields
-    for field in ['name', 'species', 'location', 'thresholds', 'care_info']:
-        if field in data:
-            fields.append(f'{field} = ?')
-            values.append(data[field])
-    if not fields:
-        return jsonify({'error': 'No valid fields to update'}), 400
-    values.append(plant_id)
-    conn = get_db()
-    c = conn.cursor()
-    c.execute(f'UPDATE plants SET {", ".join(fields)} WHERE id = ?', values)
-    conn.commit()
-    conn.close()
-    return jsonify({'status': 'ok', 'plant_id': plant_id}), 200
-
-@app.route('/users', methods=['POST'])
-def register_user():
-    data = request.json
-    user_id = str(uuid.uuid4())
-    username = data.get('username')
-    display_name = data.get('display_name')
-    conn = get_db()
-    c = conn.cursor()
-    c.execute('INSERT INTO users (id, username, display_name) VALUES (?, ?, ?)',
-              (user_id, username, display_name))
-    conn.commit()
-    conn.close()
-    return jsonify({'id': user_id, 'username': username, 'display_name': display_name}), 201
-
-@app.route('/users', methods=['GET'])
-def list_users():
-    conn = get_db()
-    c = conn.cursor()
-    c.execute('SELECT * FROM users')
-    users = [dict(row) for row in c.fetchall()]
-    conn.close()
-    return jsonify(users)
-
-@app.route('/users/<user_id>/activate', methods=['POST'])
-def activate_user(user_id):
-    conn = get_db()
-    c = conn.cursor()
-    c.execute('UPDATE users SET active=1 WHERE id=?', (user_id,))
-    conn.commit()
-    conn.close()
-    return jsonify({'status': 'ok', 'user_id': user_id})
+    """List all plants"""
+    try:
+        query = """
+            SELECT p.*, u.display_name as user_name
+            FROM plants p
+            LEFT JOIN user_plants up ON p.id = up.plant_id
+            LEFT JOIN users u ON up.user_id = u.id
+            WHERE p.active = TRUE
+            ORDER BY p.created_at DESC
+        """
+        plants = execute_query(query)
+        
+        # Convert RealDictRow objects to regular dictionaries
+        plants = convert_real_dict_rows(plants)
+        
+        # Convert JSONB fields back to dict
+        for plant in plants:
+            if plant['thresholds']:
+                if isinstance(plant['thresholds'], str):
+                    plant['thresholds'] = json.loads(plant['thresholds'])
+            if plant['care_info']:
+                if isinstance(plant['care_info'], str):
+                    plant['care_info'] = json.loads(plant['care_info'])
+        
+        return jsonify(plants)
+        
+    except Exception as e:
+        logger.error(f"Failed to list plants: {e}")
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/plants/active', methods=['GET'])
 def list_active_plants():
-    conn = get_db()
-    c = conn.cursor()
-    c.execute('''SELECT plants.* FROM plants JOIN users ON plants.user_id = users.id WHERE users.active=1''')
-    plants = [dict(row) for row in c.fetchall()]
-    conn.close()
-    return jsonify(plants)
-
-@app.route('/plant_types', methods=['GET'])
-def get_plant_types():
-    """Get available plant types from the database"""
+    """List all active plants with user assignments"""
     try:
-        with open(os.path.join(os.path.dirname(__file__), 'home_plants_database.json'), 'r') as f:
-            plant_types = json.load(f)
-        return jsonify(plant_types)
+        query = """
+            SELECT p.*, u.display_name as user_name
+            FROM plants p
+            INNER JOIN user_plants up ON p.id = up.plant_id
+            INNER JOIN users u ON up.user_id = u.id
+            WHERE p.active = TRUE
+            ORDER BY p.created_at DESC
+        """
+        plants = execute_query(query)
+        
+        # Convert RealDictRow objects to regular dictionaries
+        plants = convert_real_dict_rows(plants)
+        
+        # Convert JSONB fields back to dict
+        for plant in plants:
+            if plant['thresholds']:
+                if isinstance(plant['thresholds'], str):
+                    plant['thresholds'] = json.loads(plant['thresholds'])
+            if plant['care_info']:
+                if isinstance(plant['care_info'], str):
+                    plant['care_info'] = json.loads(plant['care_info'])
+        
+        return jsonify(plants)
+        
     except Exception as e:
-        logging.error(f"Error loading plant types: {e}")
-        return jsonify([])
+        logger.error(f"Failed to list active plants: {e}")
+        return jsonify({'error': str(e)}), 500
 
-@app.route('/register_plant', methods=['GET', 'POST'])
-def register_plant_form():
-    """Redirect to dashboard for plant registration"""
-    return redirect('http://localhost:5500/register_plant_advanced')
+@app.route('/plants/<plant_id>', methods=['GET'])
+def get_plant(plant_id):
+    """Get a specific plant"""
+    try:
+        query = """
+            SELECT p.*, u.display_name as user_name
+            FROM plants p
+            LEFT JOIN users u ON p.user_id = u.id
+            WHERE p.id = %s AND p.active = TRUE
+        """
+        result = execute_query(query, (plant_id,))
+        
+        if result:
+            plant = convert_real_dict_rows(result[0])
+            if plant['thresholds']:
+                if isinstance(plant['thresholds'], str):
+                    plant['thresholds'] = json.loads(plant['thresholds'])
+            if plant['care_info']:
+                if isinstance(plant['care_info'], str):
+                    plant['care_info'] = json.loads(plant['care_info'])
+            return jsonify(plant)
+        else:
+            abort(404)
+            
+    except Exception as e:
+        logger.error(f"Failed to get plant: {e}")
+        return jsonify({'error': str(e)}), 500
 
-@app.route('/register_user', methods=['GET', 'POST'])
-def register_user_form():
-    """Redirect to dashboard for user registration"""
-    return redirect('http://localhost:5500/register_user')
+@app.route('/plants/<plant_id>', methods=['PATCH'])
+def update_plant(plant_id):
+    """Update a plant"""
+    try:
+        data = request.json
+        
+        # Handle user_id assignment separately
+        user_id = data.pop('user_id', None) if 'user_id' in data else None
+        
+        # Build dynamic update query for plant fields
+        set_clauses = []
+        params = []
+        
+        for key, value in data.items():
+            if key in ['thresholds', 'care_info'] and value is not None:
+                set_clauses.append(f"{key} = %s")
+                params.append(json.dumps(value))
+            elif value is not None:
+                set_clauses.append(f"{key} = %s")
+                params.append(value)
+        
+        # Update plant fields if any
+        if set_clauses:
+            set_clauses.append("updated_at = NOW()")
+            params.append(plant_id)
+            
+            query = f"""
+                UPDATE plants 
+                SET {', '.join(set_clauses)}
+                WHERE id = %s AND active = TRUE
+            """
+            
+            result = execute_query(query, params)
+            if result == 0:
+                return jsonify({'error': 'Plant not found'}), 404
+        
+        # Handle user assignment
+        if user_id is not None:
+            # Remove existing assignments
+            delete_query = "DELETE FROM user_plants WHERE plant_id = %s"
+            execute_query(delete_query, (plant_id,))
+            
+            # Add new assignment
+            if user_id:  # Only assign if user_id is not None/empty
+                assign_query = """
+                    INSERT INTO user_plants (user_id, plant_id, assigned_at)
+                    VALUES (%s, %s, NOW())
+                """
+                execute_query(assign_query, (user_id, plant_id))
+                logger.info(f"Assigned plant {plant_id} to user {user_id}")
+        
+        logger.info(f"Updated plant: {plant_id}")
+        return jsonify({'message': 'Plant updated successfully'}), 200
+            
+    except Exception as e:
+        logger.error(f"Failed to update plant: {e}")
+        return jsonify({'error': str(e)}), 500
 
-@app.route('/register_user_success')
-def register_user_success():
-    """Redirect to dashboard success page"""
-    return redirect('http://localhost:5500/register_user')
+@app.route('/users', methods=['POST'])
+def register_user():
+    """Register a new user"""
+    try:
+        data = request.json
+        user_id = str(uuid.uuid4())
+        username = data.get('username')
+        display_name = data.get('display_name')
+        telegram_id = data.get('telegram_id')
+        email = data.get('email')
+        
+        query = """
+            INSERT INTO users (id, username, display_name, telegram_id, email)
+            VALUES (%s, %s, %s, %s, %s)
+            RETURNING id
+        """
+        result = execute_query(query, (user_id, username, display_name, telegram_id, email))
+        
+        if result:
+            logger.info(f"Registered user: {username} with ID {user_id}")
+            return jsonify({
+                'id': user_id,
+                'username': username,
+                'display_name': display_name,
+                'telegram_id': telegram_id,
+                'email': email
+            }), 201
+        else:
+            return jsonify({'error': 'Failed to register user'}), 500
+            
+    except Exception as e:
+        logger.error(f"User registration failed: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/users', methods=['GET'])
+def list_users():
+    """List all users"""
+    try:
+        query = "SELECT * FROM users ORDER BY created_at DESC"
+        users = execute_query(query)
+        
+        # Convert RealDictRow objects to regular dictionaries
+        users = convert_real_dict_rows(users)
+        
+        return jsonify(users)
+        
+    except Exception as e:
+        logger.error(f"Failed to list users: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/users/<user_id>/activate', methods=['POST'])
+def activate_user(user_id):
+    """Activate a user (placeholder for future functionality)"""
+    try:
+        # For now, just return success
+        # In the future, you might want to add an 'active' field to users table
+        logger.info(f"User activation requested for: {user_id}")
+        return jsonify({'message': 'User activated successfully'}), 200
+        
+    except Exception as e:
+        logger.error(f"Failed to activate user: {e}")
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/health', methods=['GET'])
 def health_check():
     """Simple health check endpoint"""
     try:
         # Test database connection
-        conn = get_db()
-        c = conn.cursor()
-        c.execute('SELECT COUNT(*) FROM plants')
-        plant_count = c.fetchone()[0]
-        c.execute('SELECT COUNT(*) FROM users')
-        user_count = c.fetchone()[0]
-        c.execute('SELECT COUNT(*) FROM devices')
-        device_count = c.fetchone()[0]
-        c.execute('SELECT COUNT(*) FROM services')
-        service_count = c.fetchone()[0]
-        conn.close()
+        if not test_connection():
+            return jsonify({
+                'status': 'unhealthy',
+                'error': 'Database connection failed'
+            }), 500
+        
+        # Get counts
+        counts = {}
+        
+        # Plant count
+        plant_result = execute_query("SELECT COUNT(*) as count FROM plants WHERE active = TRUE")
+        plant_result = convert_real_dict_rows(plant_result)
+        counts['plants'] = plant_result[0]['count'] if plant_result else 0
+        
+        # User count
+        user_result = execute_query("SELECT COUNT(*) as count FROM users")
+        user_result = convert_real_dict_rows(user_result)
+        counts['users'] = user_result[0]['count'] if user_result else 0
+        
+        # Device count
+        device_result = execute_query("SELECT COUNT(*) as count FROM devices WHERE active = TRUE")
+        device_result = convert_real_dict_rows(device_result)
+        counts['devices'] = device_result[0]['count'] if device_result else 0
+        
+        # Service count
+        service_result = execute_query("SELECT COUNT(*) as count FROM services WHERE active = TRUE")
+        service_result = convert_real_dict_rows(service_result)
+        counts['services'] = service_result[0]['count'] if service_result else 0
         
         return jsonify({
             'status': 'healthy',
             'database': 'connected',
-            'counts': {
-                'plants': plant_count,
-                'users': user_count,
-                'devices': device_count,
-                'services': service_count
-            }
+            'counts': counts
         }), 200
+        
     except Exception as e:
         return jsonify({
             'status': 'unhealthy',
             'error': str(e)
         }), 500
+
+# Web form routes (keeping existing functionality)
+@app.route('/register_plant', methods=['GET', 'POST'])
+def register_plant_form():
+    """Plant registration form"""
+    if request.method == 'POST':
+        # Handle form submission
+        name = request.form.get('name')
+        species = request.form.get('species')
+        location = request.form.get('location')
+        
+        if name:
+            try:
+                plant_data = {
+                    'name': name,
+                    'species': species,
+                    'location': location,
+                    'thresholds': {
+                        'temperature': {'min': 18, 'max': 30},
+                        'humidity': {'min': 40, 'max': 80},
+                        'soil_moisture': {'min': 300, 'max': 800}
+                    }
+                }
+                
+                response = register_plant()
+                if response[1] == 201:
+                    return "Plant registered successfully!"
+                else:
+                    return "Failed to register plant"
+            except Exception as e:
+                return f"Error: {str(e)}"
+    
+    # GET request - show form
+    form_html = '''
+    <h2>Register New Plant</h2>
+    <form method="POST">
+        <label>Name: <input type="text" name="name" required></label><br>
+        <label>Species: <input type="text" name="species"></label><br>
+        <label>Location: <input type="text" name="location"></label><br>
+        <input type="submit" value="Register Plant">
+    </form>
+    '''
+    return form_html
+
+@app.route('/register_user', methods=['GET', 'POST'])
+def register_user_form():
+    """User registration form"""
+    if request.method == 'POST':
+        # Handle form submission
+        username = request.form.get('username')
+        display_name = request.form.get('display_name')
+        
+        if username:
+            try:
+                user_data = {
+                    'username': username,
+                    'display_name': display_name
+                }
+                
+                response = register_user()
+                if response[1] == 201:
+                    return "User registered successfully!"
+                else:
+                    return "Failed to register user"
+            except Exception as e:
+                return f"Error: {str(e)}"
+    
+    # GET request - show form
+    form_html = '''
+    <h2>Register New User</h2>
+    <form method="POST">
+        <label>Username: <input type="text" name="username" required></label><br>
+        <label>Display Name: <input type="text" name="display_name"></label><br>
+        <input type="submit" value="Register User">
+    </form>
+    '''
+    return form_html
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5000, debug=True)
