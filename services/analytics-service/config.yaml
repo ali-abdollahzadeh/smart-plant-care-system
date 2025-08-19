@@ -21,11 +21,5 @@ sensor_thresholds:
     min: 300  # ADC value or percentage
     max: 800
 
-thingspeak:
-  channel_id: "2634978"
-  write_api_key: "EPX655D74F8VR98F"
-  read_api_key: "W1OQL6BMVSJW6RWF"
-  update_url: "https://api.thingspeak.com/update"
-
 report:
   interval_days: 7  # Weekly report
