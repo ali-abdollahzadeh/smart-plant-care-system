@@ -16,7 +16,7 @@ with open(CONFIG_PATH, 'r') as f:
     config = yaml.safe_load(f)
 
 bot_token = config['telegram']['bot_token']
-rest_api_url = os.environ.get('REST_API_URL', 'http://cloud-adapter-service:5001/data?results=1')
+rest_api_url = os.environ.get('REST_API_URL', 'http://sensor-data-service:5004/data')
 SENSOR_API_URL = os.environ.get('SENSOR_API_URL', 'http://sensor-service:5002/actuator')
 CATALOGUE_API_URL = os.environ.get('CATALOGUE_API_URL', 'http://catalogue-service:5000')
 
@@ -135,9 +135,10 @@ def poll_and_push_sensor_data():
         logging.info(f"[NOTIFY] user_plant_assignments: {user_plant_assignments}")
         for telegram_user_id, plant_id in list(user_plant_assignments.items()):
             try:
-                resp = requests.get(f"{SENSOR_API_URL.replace('/actuator','/data')}?plant_id={plant_id}", timeout=5)
+                resp = requests.get(f"{rest_api_url}", params={"plant_id": plant_id}, timeout=5)
                 if resp.status_code == 200:
-                    data = resp.json()
+                    payload = resp.json()
+                    data = payload.get('data')[0] if isinstance(payload, dict) and payload.get('data') else {}
                     key = (telegram_user_id, plant_id)
                     # --- Status change notification logic ---
                     plant, _ = get_plant_detail(plant_id)
@@ -448,14 +449,14 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         # Get sensor data for this plant
         try:
-            base_url = rest_api_url.split('?')[0]
+            base_url = rest_api_url
             url = f"{base_url}?plant_id={plant_id}"
             data_resp = requests.get(url, timeout=5)
             
             if data_resp.status_code == 200:
-                data = data_resp.json()
-                if isinstance(data, list) and data:
-                    data = data[-1]  # Get latest reading
+                payload = data_resp.json()
+                data_list = payload.get('data') if isinstance(payload, dict) else None
+                data = data_list[0] if data_list else {}
                 
                 if isinstance(data, dict):
                     temp = data.get("temperature") or data.get("field1", "N/A")
@@ -738,30 +739,29 @@ def get_plant_detail(plant_id):
             logging.warning(f"No data for plant_id {plant_id}, searching for available plant with data...")
             all_data_resp = requests.get(base_url)
             if all_data_resp.status_code == 200:
-                all_data = all_data_resp.json()
-                if isinstance(all_data, list) and all_data:
-                    # Try each plant_id until we find one with data
-                    for entry in all_data:
-                        alt_plant_id = entry.get("plant_id")
-                        if not alt_plant_id:
-                            continue
-                        alt_url = f"{base_url}?plant_id={alt_plant_id}"
-                        alt_resp = requests.get(alt_url)
-                        if alt_resp.status_code == 200:
-                            alt_data = alt_resp.json()
-                            if isinstance(alt_data, dict):
-                                sensor_data = {
-                                    "temperature": alt_data.get("temperature") or alt_data.get("field1", "-"),
-                                    "humidity": alt_data.get("humidity") or alt_data.get("field2", "-"),
-                                    "soil_moisture": alt_data.get("soil_moisture") or alt_data.get("field3", "-"),
-                                    "lighting": alt_data.get("lighting", "-")
-                                }
-                                # Optionally update the user's assigned plant in the catalogue-service
-                                try:
-                                    requests.patch(f"{CATALOGUE_API_URL}/plants/{alt_plant_id}", json={"user_id": plant.get("user_id")})
-                                except Exception as e:
-                                    logging.error(f"Failed to auto-assign plant: {e}")
-                                break
+                payload_all = all_data_resp.json()
+                data_list = payload_all.get('data') if isinstance(payload_all, dict) else []
+                for entry in data_list:
+                    alt_plant_id = entry.get("plant_id")
+                    if not alt_plant_id:
+                        continue
+                    alt_resp = requests.get(f"{base_url}", params={"plant_id": alt_plant_id})
+                    if alt_resp.status_code == 200:
+                        alt_payload = alt_resp.json()
+                        alt_list = alt_payload.get('data') if isinstance(alt_payload, dict) else []
+                        if alt_list:
+                            alt_data = alt_list[0]
+                            sensor_data = {
+                                "temperature": alt_data.get("temperature") or alt_data.get("field1", "-"),
+                                "humidity": alt_data.get("humidity") or alt_data.get("field2", "-"),
+                                "soil_moisture": alt_data.get("soil_moisture") or alt_data.get("field3", "-"),
+                                "lighting": alt_data.get("lighting", "-")
+                            }
+                            try:
+                                requests.patch(f"{CATALOGUE_API_URL}/plants/{alt_plant_id}", json={"user_id": plant.get("user_id")})
+                            except Exception as e:
+                                logging.error(f"Failed to auto-assign plant: {e}")
+                            break
     except Exception as e:
         logging.error(f"Failed to fetch sensor data: {e}")
     return plant, sensor_data

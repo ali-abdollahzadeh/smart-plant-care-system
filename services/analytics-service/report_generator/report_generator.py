@@ -2,7 +2,13 @@ import logging
 import datetime
 from typing import List, Tuple, Optional
 
-from database.influxdb import query_data
+try:
+    from database.influxdb import query_data
+except ModuleNotFoundError:
+    import os
+    import sys
+    sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
+    from database.influxdb import query_data
 
 
 def _fetch_influx_series(days: int = 7, plant_id: Optional[str] = None) -> Tuple[List[float], List[float], List[float]]:

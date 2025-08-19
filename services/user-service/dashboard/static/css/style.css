@@ -243,7 +243,6 @@ body {
     padding: 1rem 1.5rem;
     border-radius: 8px;
     margin-bottom: 1.5rem;
-    display: flex;
     align-items: center;
     gap: 0.5rem;
 }

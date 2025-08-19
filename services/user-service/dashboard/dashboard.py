@@ -18,7 +18,8 @@ with open(CONFIG_PATH, 'r') as f:
 
 # Configuration
 CATALOGUE_API_URL = os.environ.get('CATALOGUE_API_URL', 'http://catalogue-service:5000')
-SENSOR_API_URL = os.environ.get('SENSOR_API_URL', 'http://sensor-service:5500')
+SENSOR_API_URL = os.environ.get('SENSOR_API_URL', 'http://sensor-service:5002')
+SENSOR_DATA_API_URL = os.environ.get('SENSOR_DATA_API_URL', 'http://sensor-data-service:5004')
 
 logging.basicConfig(level=logging.INFO, format='[%(asctime)s] %(levelname)s: %(message)s')
 
@@ -276,13 +277,18 @@ def plant_status():
         plants_resp = requests.get(f"{CATALOGUE_API_URL}/plants", timeout=5)
         plants = plants_resp.json() if plants_resp.status_code == 200 else []
         
-        # Fetch sensor data for each plant
+        # Fetch sensor data for each plant (from sensor-data-service)
         for plant in plants:
             try:
-                # Get sensor data from sensor service
-                sensor_resp = requests.get(f"{SENSOR_API_URL}/sensor_data/{plant['id']}", timeout=5)
+                # Get latest sensor data from sensor-data-service
+                sensor_resp = requests.get(f"{SENSOR_DATA_API_URL}/data/latest", params={"plant_id": plant['id']}, timeout=5)
                 if sensor_resp.status_code == 200:
-                    plant['sensor_data'] = sensor_resp.json()
+                    payload = sensor_resp.json()
+                    data_list = payload.get('data') if isinstance(payload, dict) else None
+                    if isinstance(data_list, list) and len(data_list) > 0:
+                        plant['sensor_data'] = data_list[0]
+                    else:
+                        plant['sensor_data'] = None
                 else:
                     plant['sensor_data'] = None
             except Exception as e:
