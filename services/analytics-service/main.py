@@ -10,9 +10,10 @@ import threading
 import logging
 import yaml
 import requests
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request
 from report_generator.report_generator import generate_weekly_report
 from sensor_control.control_center import ControlCenter
+from database.influxdb import test_connection as test_influx_connection
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='[%(asctime)s] %(levelname)s: %(message)s')
@@ -23,7 +24,6 @@ with open(CONFIG_PATH, 'r') as f:
     config = yaml.safe_load(f)
 
 mqtt_conf = config['mqtt']
-thingspeak_conf = config['thingspeak']
 thresholds = config['sensor_thresholds']
 
 # Auto-register service in catalogue
@@ -58,31 +58,20 @@ app = Flask(__name__)
 
 @app.route('/report/weekly', methods=['GET'])
 def weekly_report():
-    report = generate_weekly_report(
-        channel_id=thingspeak_conf['channel_id'],
-        read_api_key=thingspeak_conf['read_api_key']
-    )
+    days = int(request.args.get('days', 7))
+    plant_id = request.args.get('plant_id')
+    report = generate_weekly_report(days=days, plant_id=plant_id)
     return jsonify(report)
 
 @app.route('/health', methods=['GET'])
 def health_check():
     """Simple health check endpoint"""
-    try:
-        # Test ThingSpeak connection
-        test_report = generate_weekly_report(
-            channel_id=thingspeak_conf['channel_id'],
-            read_api_key=thingspeak_conf['read_api_key']
-        )
-        return jsonify({
-            'status': 'healthy',
-            'thingspeak': 'connected',
-            'control_center': 'running'
-        }), 200
-    except Exception as e:
-        return jsonify({
-            'status': 'unhealthy',
-            'error': str(e)
-        }), 500
+    influx_ok = test_influx_connection()
+    return jsonify({
+        'status': 'healthy' if influx_ok else 'unhealthy',
+        'influxdb': 'connected' if influx_ok else 'disconnected',
+        'control_center': 'running'
+    }), 200 if influx_ok else 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
