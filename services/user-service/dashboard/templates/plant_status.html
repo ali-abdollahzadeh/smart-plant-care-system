@@ -122,7 +122,8 @@
                 },
                 body: JSON.stringify({
                     action: 'water',
-                    plant_id: plantId
+                    plant_id: plantId,
+                    value: true
                 })
             })
             .then(response => response.json())
@@ -146,8 +147,9 @@
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({
-                    action: 'toggle_led',
-                    plant_id: plantId
+                    action: 'led',
+                    plant_id: plantId,
+                    value: 'toggle'
                 })
             })
             .then(response => response.json())
