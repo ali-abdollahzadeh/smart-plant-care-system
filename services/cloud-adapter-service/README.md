@@ -1,6 +1,6 @@
 # Cloud Adapter Service
 
-The Cloud Adapter Service bridges the Smart Plant Care System with cloud platforms, primarily ThingSpeak, for data storage, visualization, and external integrations. It forwards sensor data to the cloud and provides REST APIs for data retrieval.
+The Cloud Adapter Service subscribes to MQTT sensor messages and exposes a lightweight REST API to fetch the latest readings kept in-memory for quick access. Historical and aggregated data are served by the `sensor-data-service` from InfluxDB.
 
 ## 🎯 Purpose
 
@@ -49,7 +49,6 @@ python main.py
 ### Access Points
 - **REST API**: http://localhost:5001
 - **Latest Data**: http://localhost:5001/data
-- **ThingSpeak Data**: http://localhost:5001/thingspeak_data
 
 ## 📋 API Endpoints
 
@@ -71,29 +70,7 @@ GET /data?plant_id=plant-uuid
 }
 ```
 
-#### Get ThingSpeak Historical Data
-```http
-GET /thingspeak_data?days=7
-```
-
-**Response:**
-```json
-{
-  "channel": {
-    "id": 2634978,
-    "name": "Smart Plant Care",
-    "description": "Plant monitoring data"
-  },
-  "feeds": [
-    {
-      "created_at": "2024-01-15T10:30:00Z",
-      "field1": "24.5",
-      "field2": "65.2",
-      "field3": "450"
-    }
-  ]
-}
-```
+For historical/aggregated data, query the `sensor-data-service` endpoints (e.g., `/data`, `/data/latest`, `/data/aggregated`).
 
 #### Get Data by Time Range
 ```http
@@ -106,14 +83,7 @@ GET /data?start=2024-01-08&end=2024-01-15
 - `CONFIG_PATH`: Path to global configuration file
 - `CATALOGUE_URL`: URL for catalogue service registration
 
-### ThingSpeak Configuration
-```yaml
-thingspeak:
-  channel_id: "2634978"
-  write_api_key: "EPX655D74F8VR98F"
-  read_api_key: "W1OQL6BMVSJW6RWF"
-  update_url: "https://api.thingspeak.com/update"
-```
+ThingSpeak configuration has been removed. The system now uses InfluxDB for time-series storage.
 
 ### MQTT Configuration
 ```yaml
@@ -125,12 +95,10 @@ mqtt:
 
 ## 📊 Data Flow
 
-### MQTT to ThingSpeak Bridge
+### MQTT Subscriber
 1. **Subscribe**: Service subscribes to `plant/sensor` topic
 2. **Parse**: Extract sensor data from MQTT message
-3. **Transform**: Convert to ThingSpeak format
-4. **Forward**: Send to ThingSpeak via HTTP POST
-5. **Log**: Record successful transmission
+3. **Cache**: Store latest message per `plant_id` in memory for quick access
 
 ### Data Format Mapping
 ```
@@ -156,49 +124,19 @@ print(f"Humidity: {data['humidity']}%")
 print(f"Soil Moisture: {data['soil_moisture']}")
 ```
 
-### Retrieve Historical Data
-```python
-import requests
-from datetime import datetime, timedelta
+For historical data examples, see `services/sensor-data-service/README.md`.
 
-# Get last 7 days of data
-end_date = datetime.now()
-start_date = end_date - timedelta(days=7)
-
-params = {
-    'start': start_date.strftime('%Y-%m-%d'),
-    'end': end_date.strftime('%Y-%m-%d')
-}
-
-response = requests.get("http://localhost:5001/data", params=params)
-historical_data = response.json()
-
-for reading in historical_data['feeds']:
-    print(f"Time: {reading['created_at']}")
-    print(f"Temperature: {reading['field1']}°C")
-```
-
-### Monitor ThingSpeak Integration
-```python
-import requests
-
-# Check ThingSpeak data
-response = requests.get("http://localhost:5001/thingspeak_data?days=1")
-thingspeak_data = response.json()
-
-print(f"Channel: {thingspeak_data['channel']['name']}")
-print(f"Total readings: {len(thingspeak_data['feeds'])}")
-```
+The ThingSpeak integration has been removed.
 
 ## 🔍 Monitoring
 
 ### Available Endpoints
 - **Latest Data**: http://localhost:5001/data
-- **ThingSpeak Data**: http://localhost:5001/thingspeak_data
+- Removed ThingSpeak endpoint
 
 ### MQTT Topics
 - **Subscribe**: `plant/sensor` (sensor data)
-- **Bridge**: Forwards to ThingSpeak
+- **Bridge**: In-memory cache only (no cloud forwarding)
 
 ### Logs
 ```bash
@@ -316,10 +254,6 @@ api_key=EPX655D74F8VR98F&field1=24.5&field2=65.2&field3=450
 
 ### Debug Commands
 ```bash
-# Test ThingSpeak connection
-curl -X POST "https://api.thingspeak.com/update" \
-  -d "api_key=YOUR_API_KEY&field1=25.0&field2=60.0&field3=500"
-
 # Check MQTT messages
 mosquitto_sub -h localhost -t "plant/sensor" -v
 
@@ -338,8 +272,8 @@ curl -w "@curl-format.txt" -o /dev/null -s http://localhost:5001/data
 # Check service resource usage
 docker stats cloud-adapter-service
 
-# Monitor ThingSpeak API calls
-grep "thingspeak" docker-compose logs cloud-adapter-service
+# MQTT traffic filters
+grep "MQTT" docker-compose logs cloud-adapter-service
 ```
 
 ## 📚 Related Services

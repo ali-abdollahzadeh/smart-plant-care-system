@@ -1,61 +1,97 @@
-import requests
 import logging
 import datetime
+from typing import List, Tuple, Optional
 
-# Fetch the data from the Thingspeak channel
-def fetch_thingspeak_data(channel_id, read_api_key, days=7):
-    url = f"https://api.thingspeak.com/channels/{channel_id}/feeds.json"
-    params = {
-        'api_key': read_api_key,
-        'results': days * 24 * 12  # 5-min intervals for 7 days
-    }
+try:
+    from database.influxdb import query_data
+except ModuleNotFoundError:
+    import os
+    import sys
+    sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
+    from database.influxdb import query_data
+
+
+def _fetch_influx_series(days: int = 7, plant_id: Optional[str] = None) -> Tuple[List[float], List[float], List[float]]:
+    """Query InfluxDB for the last `days` of sensor readings.
+
+    Returns three series: temperature, humidity, soil_moisture.
+    """
+    # Build Flux query
+    bucket_var = 'sensor_data'
+    time_range = f"- {days}d" if days else "-7d"
+
+    filters = [
+        'r._measurement == "sensor_readings"',
+        '(r._field == "temperature" or r._field == "humidity" or r._field == "soil_moisture")',
+    ]
+    if plant_id:
+        filters.append(f'r.plant_id == "{plant_id}"')
+
+    filter_clause = ' and '.join(filters)
+
+    flux = (
+        f'from(bucket: "{bucket_var}")\n'
+        f'  |> range(start: {time_range})\n'
+        f'  |> filter(fn: (r) => {filter_clause})\n'
+        f'  |> keep(columns: ["_time", "_field", "_value"])\n'
+    )
+
+    temps: List[float] = []
+    hums: List[float] = []
+    moistures: List[float] = []
+
     try:
-        resp = requests.get(url, params=params, timeout=10)
-        resp.raise_for_status()
-        feeds = resp.json().get('feeds', [])
-        return feeds
+        tables = query_data(flux)
+        for table in tables:
+            for record in table.records:
+                value = record.get_value()
+                field = record.get_field()
+                if value is None:
+                    continue
+                try:
+                    numeric = float(value)
+                except (TypeError, ValueError):
+                    continue
+                if field == 'temperature':
+                    temps.append(numeric)
+                elif field == 'humidity':
+                    hums.append(numeric)
+                elif field == 'soil_moisture':
+                    moistures.append(numeric)
     except Exception as e:
-        logging.error(f"ThingSpeak fetch error: {e}")
-        return []
+        logging.error(f"Failed to query InfluxDB for report: {e}")
 
-# Parse the sensor data
-def parse_sensor_data(feeds):
-    temps, hums, moistures = [], [], []
-    for entry in feeds:
-        try:
-            temp = float(entry.get('field1', 'nan')) 
-            hum = float(entry.get('field2', 'nan')) 
-            moist = float(entry.get('field3', 'nan'))
-            if not any(map(lambda x: x != x, [temp, hum, moist])):  # check for NaN
-                temps.append(temp)
-                hums.append(hum)
-                moistures.append(moist)
-        except Exception:
-            continue
     return temps, hums, moistures
 
-# Generate the weekly report
-def generate_weekly_report(channel_id, read_api_key): 
-    feeds = fetch_thingspeak_data(channel_id, read_api_key) 
-    temps, hums, moistures = parse_sensor_data(feeds) 
+
+def generate_weekly_report(days: int = 7, plant_id: Optional[str] = None):
+    """Generate an aggregate report from InfluxDB for the requested window.
+
+    If `plant_id` is provided, aggregates are scoped to that plant.
+    """
+    temps, hums, moistures = _fetch_influx_series(days=days, plant_id=plant_id)
+
     report = {}
     if temps:
         report['temperature'] = {
-            'avg': round(sum(temps)/len(temps), 2),
+            'avg': round(sum(temps) / len(temps), 2),
             'min': min(temps),
             'max': max(temps)
         }
     if hums:
         report['humidity'] = {
-            'avg': round(sum(hums)/len(hums), 2),
+            'avg': round(sum(hums) / len(hums), 2),
             'min': min(hums),
             'max': max(hums)
         }
     if moistures:
         report['soil_moisture'] = {
-            'avg': round(sum(moistures)/len(moistures), 2),
+            'avg': round(sum(moistures) / len(moistures), 2),
             'min': min(moistures),
             'max': max(moistures)
         }
     report['generated_at'] = datetime.datetime.now().isoformat()
+    if plant_id:
+        report['plant_id'] = plant_id
+    report['window_days'] = days
     return report

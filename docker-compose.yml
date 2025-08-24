@@ -9,6 +9,36 @@ services:
       - ./docker/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
     restart: unless-stopped
 
+  # PostgreSQL for relational data (users, plants, devices)
+  postgres:
+    image: postgres:15
+    container_name: postgres
+    environment:
+      POSTGRES_DB: smart_plant_care
+      POSTGRES_USER: plant_user
+      POSTGRES_PASSWORD: password123
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+
+  # InfluxDB for time-series sensor data
+  influxdb:
+    image: influxdb:2.7
+    container_name: influxdb
+    ports:
+      - "8086:8086"
+    environment:
+      - DOCKER_INFLUXDB_INIT_MODE=setup
+      - DOCKER_INFLUXDB_INIT_USERNAME=admin
+      - DOCKER_INFLUXDB_INIT_PASSWORD=password123
+      - DOCKER_INFLUXDB_INIT_ORG=smart_plant_care
+      - DOCKER_INFLUXDB_INIT_BUCKET=sensor_data
+    volumes:
+      - influxdb_data:/var/lib/influxdb2
+    restart: unless-stopped
+
   sensor-service:
     build:
       context: ./services/sensor-service
@@ -18,16 +48,22 @@ services:
       - ./services/sensor-service/config.yaml:/app/config.yaml:ro
     environment:
       - CONFIG_PATH=/app/config.yaml
+      - INFLUXDB_URL=http://influxdb:8086
+      - INFLUXDB_USERNAME=admin
+      - INFLUXDB_PASSWORD=password123
+      - INFLUXDB_ORG=smart_plant_care
+      - INFLUXDB_BUCKET=sensor_data
     restart: unless-stopped
     depends_on:
       - mqtt-broker
+      - influxdb
     ports:
       - "5002:5002"
 
   analytics-service:
     build:
-      context: ./services/analytics-service
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: ./services/analytics-service/Dockerfile
     container_name: analytics-service
     ports:
       - "5003:5000"
@@ -35,23 +71,33 @@ services:
       - ./services/analytics-service/config.yaml:/app/config.yaml:ro
     environment:
       - CONFIG_PATH=/app/config.yaml
+      - INFLUXDB_URL=http://influxdb:8086
+      - INFLUXDB_USERNAME=admin
+      - INFLUXDB_PASSWORD=password123
+      - INFLUXDB_ORG=smart_plant_care
+      - INFLUXDB_BUCKET=sensor_data
+      - POSTGRES_URL=postgresql://plant_user:password123@postgres:5432/smart_plant_care
     restart: unless-stopped
     depends_on:
       - mqtt-broker
+      - influxdb
+      - postgres
 
   catalogue-service:
     build:
-      context: ./services/catalogue-service
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: ./services/catalogue-service/Dockerfile
     container_name: catalogue-service
     ports:
       - "5000:5000"
     volumes:
       - ./services/catalogue-service/config.yaml:/app/config.yaml:ro
-      - catalogue_db:/app/catalogue_data.db
     environment:
       - CONFIG_PATH=/app/config.yaml
+      - POSTGRES_URL=postgresql://plant_user:password123@postgres:5432/smart_plant_care
     restart: unless-stopped
+    depends_on:
+      - database-init
 
   cloud-adapter-service:
     build:
@@ -64,23 +110,79 @@ services:
       - ./services/cloud-adapter-service/config.yaml:/app/config.yaml:ro
     environment:
       - CONFIG_PATH=/app/config.yaml
+      - INFLUXDB_URL=http://influxdb:8086
+      - INFLUXDB_USERNAME=admin
+      - INFLUXDB_PASSWORD=password123
+      - INFLUXDB_ORG=smart_plant_care
+      - INFLUXDB_BUCKET=sensor_data
     restart: unless-stopped
     depends_on:
       - mqtt-broker
+      - influxdb
+
+  database-init:
+    build:
+      context: .
+      dockerfile: ./services/database-init/Dockerfile
+    container_name: database-init
+    environment:
+      - POSTGRES_URL=postgresql://plant_user:password123@postgres:5432/smart_plant_care
+      - INFLUXDB_URL=http://influxdb:8086
+      - INFLUXDB_USERNAME=admin
+      - INFLUXDB_PASSWORD=password123
+      - INFLUXDB_ORG=smart_plant_care
+      - INFLUXDB_BUCKET=sensor_data
+    restart: "no"
+    depends_on:
+      - postgres
+      - influxdb
+
+  sensor-data-service:
+    build:
+      context: .
+      dockerfile: ./services/sensor-data-service/Dockerfile
+    container_name: sensor-data-service
+    volumes:
+      - ./services/sensor-data-service/config.yaml:/app/config.yaml:ro
+    environment:
+      - CONFIG_PATH=/app/config.yaml
+      - INFLUXDB_URL=http://influxdb:8086
+      - INFLUXDB_USERNAME=admin
+      - INFLUXDB_PASSWORD=password123
+      - INFLUXDB_ORG=smart_plant_care
+      - INFLUXDB_BUCKET=sensor_data
+      - CATALOGUE_URL=http://catalogue-service:5000
+      - POSTGRES_URL=postgresql://plant_user:password123@postgres:5432/smart_plant_care
+    restart: unless-stopped
+    depends_on:
+      - database-init
+      - mqtt-broker
+      - influxdb
+      - catalogue-service
+    ports:
+      - "5004:5004"
 
   user-service:
     build:
-      context: ./services/user-service
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: ./services/user-service/Dockerfile
     container_name: user-service
     volumes:
       - ./services/user-service/config.yaml:/app/config.yaml:ro
-      - user_db:/app/user_data.db
     environment:
       - CONFIG_PATH=/app/config.yaml
+      - POSTGRES_URL=postgresql://plant_user:password123@postgres:5432/smart_plant_care
+      - INFLUXDB_URL=http://influxdb:8086
+      - INFLUXDB_USERNAME=admin
+      - INFLUXDB_PASSWORD=password123
+      - INFLUXDB_ORG=smart_plant_care
+      - INFLUXDB_BUCKET=sensor_data
     restart: unless-stopped
     depends_on:
+      - database-init
       - mqtt-broker
+      - postgres
+      - influxdb
     ports:
       - "5500:5500"
 
@@ -97,5 +199,5 @@ services:
 
 volumes:
   nodered_data:
-  catalogue_db:
-  user_db: 
+  postgres_data:
+  influxdb_data: 

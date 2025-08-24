@@ -1,7 +1,6 @@
 paho-mqtt==1.6.1
+Flask==2.3.3
 PyYAML==6.0.1
 requests==2.31.0
-Flask==2.3.3
-python-telegram-bot==20.6
 psycopg2-binary==2.9.7
- 
+influxdb-client==1.38.0 

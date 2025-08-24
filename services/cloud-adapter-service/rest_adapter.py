@@ -2,7 +2,6 @@ from flask import Flask, jsonify, request
 import os
 import yaml
 import logging
-from thingspeak_client import get_data
 from mqtt_subscriber import latest_data
 
 app = Flask(__name__)
@@ -11,7 +10,7 @@ CONFIG_PATH = os.environ.get("CONFIG_PATH", "config.yaml")
 with open(CONFIG_PATH, 'r') as f:
     config = yaml.safe_load(f)
 
-thingspeak_conf = config['thingspeak']
+logging.getLogger(__name__)
 
 @app.route('/data', methods=['GET'])
 def get_latest_data():
@@ -32,13 +31,4 @@ def get_latest_data():
         logging.error(f"Exception in /data endpoint: {e}")
         return jsonify({'error': str(e)}), 500
 
-# (Optional) Add a new endpoint for ThingSpeak history
-@app.route('/thingspeak_data', methods=['GET'])
-def get_thingspeak_data():
-    results = int(request.args.get('results', 100))
-    feeds = get_data(
-        channel_id=thingspeak_conf['channel_id'],
-        read_api_key=thingspeak_conf['read_api_key'],
-        results=results
-    )
-    return jsonify(feeds)
+# Removed ThingSpeak historical endpoint; system uses InfluxDB via sensor-data-service

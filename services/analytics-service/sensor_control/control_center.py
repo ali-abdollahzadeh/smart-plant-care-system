@@ -36,8 +36,23 @@ class ControlCenter:
             resp = requests.get(f"{CATALOGUE_URL}/{plant_id}", timeout=3) # Available in http://catalogue-service:5000/plants/{plant_id}
             if resp.status_code == 200:
                 plant = resp.json()
-                import ast
-                thresholds = ast.literal_eval(plant.get('thresholds', '{}'))
+                raw_thresholds = plant.get('thresholds')
+
+                # Accept dict or JSON string; fall back gracefully
+                if isinstance(raw_thresholds, dict):
+                    thresholds = raw_thresholds
+                elif isinstance(raw_thresholds, str) and raw_thresholds.strip():
+                    try:
+                        thresholds = json.loads(raw_thresholds)
+                    except Exception:
+                        try:
+                            import ast
+                            thresholds = ast.literal_eval(raw_thresholds)
+                        except Exception:
+                            thresholds = {}
+                else:
+                    thresholds = {}
+
                 return thresholds if thresholds else self.default_thresholds
         except Exception as e:
             logging.error(f"Error fetching thresholds for plant {plant_id}: {e}")

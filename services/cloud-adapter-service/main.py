@@ -4,7 +4,7 @@ import logging
 import yaml
 import requests
 from flask import Flask
-from mqtt_subscriber import MqttToThingSpeakBridge
+from mqtt_subscriber import MqttSubscriber
 import rest_adapter
 
 
@@ -15,7 +15,6 @@ with open(CONFIG_PATH, 'r') as f:
     config = yaml.safe_load(f)
 
 mqtt_conf = config['mqtt']
-thingspeak_conf = config['thingspeak']
 
 # Auto-register service in catalogue
 CATALOGUE_URL = os.environ.get('CATALOGUE_URL', 'http://catalogue-service:5000/services')
@@ -33,18 +32,16 @@ try:
 except Exception as e:
     logging.error(f"Could not register service in catalogue: {e}")
 
-bridge = MqttToThingSpeakBridge(
+subscriber = MqttSubscriber(
     broker=mqtt_conf['broker_url'],
     port=mqtt_conf.get('port', 1883),
-    subscribe_topic=mqtt_conf['publish_topic'],
-    thingspeak_url=thingspeak_conf['update_url'],
-    write_api_key=thingspeak_conf['write_api_key']
+    subscribe_topic=mqtt_conf['publish_topic']
 )
 
 app = rest_adapter.app
 
 if __name__ == '__main__':
     # Start MQTT subscriber in a background thread
-    threading.Thread(target=bridge.start, daemon=True).start()
+    threading.Thread(target=subscriber.start, daemon=True).start()
     # Start Flask app
     app.run(host='0.0.0.0', port=5001)

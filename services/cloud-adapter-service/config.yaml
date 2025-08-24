@@ -6,8 +6,3 @@ mqtt:
   command_topic: "plant/command"  # Actuator control (manual, Telegram, automated)
   data_format: "json"
 
-thingspeak:
-  channel_id: "2634978"
-  write_api_key: "EPX655D74F8VR98F"
-  read_api_key: "W1OQL6BMVSJW6RWF"
-  update_url: "https://api.thingspeak.com/update"

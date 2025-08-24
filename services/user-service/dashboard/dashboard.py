@@ -5,11 +5,9 @@ import requests
 import json
 import ast
 from flask import Flask, render_template, request, redirect, url_for, jsonify
-from db import init_db, ensure_db, get_connection, add_user, get_user_by_telegram_id
+from db import init_db, ensure_db, add_user, get_user_by_telegram_id, execute_query
 
-# Initialize database
-init_db()
-ensure_db()
+# Database initialization is handled in main.py
 
 app = Flask(__name__, template_folder='templates', static_folder='static')
 
@@ -20,7 +18,8 @@ with open(CONFIG_PATH, 'r') as f:
 
 # Configuration
 CATALOGUE_API_URL = os.environ.get('CATALOGUE_API_URL', 'http://catalogue-service:5000')
-SENSOR_API_URL = os.environ.get('SENSOR_API_URL', 'http://sensor-service:5500')
+SENSOR_API_URL = os.environ.get('SENSOR_API_URL', 'http://sensor-service:5002')
+SENSOR_DATA_API_URL = os.environ.get('SENSOR_DATA_API_URL', 'http://sensor-data-service:5004')
 
 logging.basicConfig(level=logging.INFO, format='[%(asctime)s] %(levelname)s: %(message)s')
 
@@ -28,17 +27,15 @@ logging.basicConfig(level=logging.INFO, format='[%(asctime)s] %(levelname)s: %(m
 def dashboard():
     """Main dashboard page"""
     try:
-        # Get statistics
-        with get_connection() as conn:
-            c = conn.cursor()
-            c.execute('SELECT COUNT(*) FROM users')
-            user_count = c.fetchone()[0]
-            
-            c.execute('SELECT COUNT(*) FROM plants')
-            plant_count = c.fetchone()[0]
-            
-            c.execute('SELECT COUNT(*) FROM plants WHERE active = 1')
-            active_plants = c.fetchone()[0]
+        # Get statistics using new database methods
+        user_result = execute_query('SELECT COUNT(*) as count FROM users')
+        user_count = user_result[0]['count'] if user_result else 0
+        
+        plant_result = execute_query('SELECT COUNT(*) as count FROM plants')
+        plant_count = plant_result[0]['count'] if plant_result else 0
+        
+        active_plants_result = execute_query('SELECT COUNT(*) as count FROM plants WHERE active = TRUE')
+        active_plants = active_plants_result[0]['count'] if active_plants_result else 0
         
         # Get alerts count (placeholder for now)
         alerts_count = 0
@@ -98,11 +95,9 @@ def register_plant():
     message = None
     
     try:
-        # Fetch users from DB
-        with get_connection() as conn:
-            c = conn.cursor()
-            c.execute('SELECT id, name, telegram_id FROM users')
-            users = c.fetchall()
+        # Fetch users from DB using new database methods
+        users_result = execute_query('SELECT id, display_name as name, telegram_id FROM users')
+        users = users_result if users_result else []
     except Exception as e:
         logging.error(f"Error fetching users: {e}")
         users = []
@@ -123,8 +118,8 @@ def register_plant():
                 thresholds_dict = json.loads(thresholds)
             
             # Register plant in local database
-            from telegram_bot import register_plant_for_user
-            register_plant_for_user(user_id, name, type_, str(thresholds_dict), species, location)
+            from db import add_plant
+            add_plant(name, species, location, str(thresholds_dict), None, user_id)
             
             # Also register in catalogue service
             try:
@@ -213,8 +208,8 @@ def register_plant_advanced():
             if resp.status_code == 201:
                 # Also register in local database
                 try:
-                    from telegram_bot import register_plant_for_user
-                    register_plant_for_user(user_id, name, "database", str(thresholds), species, location)
+                    from db import add_plant
+                    add_plant(name, species, location, str(thresholds), None, user_id)
                 except Exception as e:
                     logging.error(f"Could not register plant in local DB: {e}")
                 
@@ -282,13 +277,18 @@ def plant_status():
         plants_resp = requests.get(f"{CATALOGUE_API_URL}/plants", timeout=5)
         plants = plants_resp.json() if plants_resp.status_code == 200 else []
         
-        # Fetch sensor data for each plant
+        # Fetch sensor data for each plant (from sensor-data-service)
         for plant in plants:
             try:
-                # Get sensor data from sensor service
-                sensor_resp = requests.get(f"{SENSOR_API_URL}/sensor_data/{plant['id']}", timeout=5)
+                # Get latest sensor data from sensor-data-service
+                sensor_resp = requests.get(f"{SENSOR_DATA_API_URL}/data/latest", params={"plant_id": plant['id']}, timeout=5)
                 if sensor_resp.status_code == 200:
-                    plant['sensor_data'] = sensor_resp.json()
+                    payload = sensor_resp.json()
+                    data_list = payload.get('data') if isinstance(payload, dict) else None
+                    if isinstance(data_list, list) and len(data_list) > 0:
+                        plant['sensor_data'] = data_list[0]
+                    else:
+                        plant['sensor_data'] = None
                 else:
                     plant['sensor_data'] = None
             except Exception as e:

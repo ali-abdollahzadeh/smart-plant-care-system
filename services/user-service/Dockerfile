@@ -1,10 +1,14 @@
 FROM python:3.10-slim
 WORKDIR /app
-COPY requirements.txt .
+
+COPY database/requirements.txt ./database-requirements.txt
+COPY services/user-service/requirements.txt .
+
+RUN pip install --no-cache-dir -r database-requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
-RUN mkdir -p /app/data && chown -R nobody:nogroup /app/data
-COPY . .
+# Copy the shared database package and service code
+COPY database/ ./database/
+COPY services/user-service/ .
+
 EXPOSE 5500
-USER nobody
-ENV USER_DB_PATH=/app/data/user_data.db
 CMD ["python", "main.py"]

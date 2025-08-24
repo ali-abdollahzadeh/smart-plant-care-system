@@ -2,3 +2,4 @@ requests
 paho-mqtt
 PyYAML
 Flask 
+influxdb-client==1.38.0
