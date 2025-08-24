@@ -5,6 +5,8 @@ import yaml
 import requests
 import paho.mqtt.client as mqtt
 from db import init_db, ensure_db
+from bot.telegram_bot import start_bot
+
 
 # Initialize database before importing telegram_bot
 init_db()
@@ -68,6 +70,13 @@ if __name__ == '__main__':
     # Import dashboard after database initialization
     from dashboard.dashboard import app
     
-    threading.Thread(target=start_mqtt_listener, daemon=True).start()
-    threading.Thread(target=lambda: app.run(host='0.0.0.0', port=5500), daemon=True).start()
-    start_bot()  # Run the Telegram bot in the main thread
+if __name__ == "__main__":
+    # ...
+    # MQTT listener can stay daemon
+    threading.Thread(target=start_mqtt_listener, name="mqtt-listener", daemon=True).start()
+
+    # Telegram bot MUST NOT be daemon
+    threading.Thread(target=start_bot, name="telegram-bot", daemon=False).start()
+
+    # Run Flask in the main thread; no reloader to avoid a second process
+    app.run(host='0.0.0.0', port=5500, debug=False, use_reloader=False)
