@@ -128,7 +128,6 @@ def register_plant():
                     "species": species,
                     "location": location,
                     "thresholds": thresholds_dict,
-                    "user_id": user_id
                 }
                 resp = requests.post(f"{CATALOGUE_API_URL}/plants", json=catalogue_payload, timeout=5)
                 if resp.status_code == 201:
@@ -201,7 +200,6 @@ def register_plant_advanced():
                 "location": location,
                 "thresholds": thresholds,
                 "care_info": care_info,
-                "user_id": user_id
             }
             resp = requests.post(f"{CATALOGUE_API_URL}/plants", json=catalogue_payload, timeout=5)
             
@@ -255,11 +253,16 @@ def assign_plant():
             plant_id = request.form.get('plant_id')
             
             # Assign plant by updating user_id in catalogue-service
-            update_resp = requests.patch(f"{CATALOGUE_API_URL}/plants/{plant_id}", 
-                                       json={"user_id": user_id}, timeout=5)
-            
-            if update_resp.status_code == 200:
+            update_resp = requests.post(
+                f"{CATALOGUE_API_URL}/user_plants",
+                json={"user_id": user_id, "plant_id": plant_id},
+                timeout=5
+            )
+
+            if update_resp.status_code in (200, 201):
                 message = "Plant assigned successfully!"
+            elif update_resp.status_code == 404:
+                error = "User or plant not found."
             else:
                 error = f"Failed to assign plant: {update_resp.status_code}"
                 

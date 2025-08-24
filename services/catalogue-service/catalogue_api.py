@@ -11,6 +11,7 @@ app = Flask(__name__)
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+
 def convert_real_dict_rows(data):
     """Convert RealDictRow objects to regular dictionaries"""
     if isinstance(data, list):
@@ -36,6 +37,7 @@ def init_db():
 # Initialize database on startup
 init_db()
 
+# Device endpoints
 @app.route('/devices', methods=['POST'])
 def register_device():
     """Register a new device"""
@@ -120,6 +122,7 @@ def get_device(device_id):
         logger.error(f"Failed to get device: {e}")
         return jsonify({'error': str(e)}), 500
 
+# Service endpoints
 @app.route('/services', methods=['POST'])
 def register_service():
     """Register a new service"""
@@ -198,37 +201,35 @@ def get_service(service_id):
         logger.error(f"Failed to get service: {e}")
         return jsonify({'error': str(e)}), 500
 
+# Plant endpoints
 @app.route('/plants', methods=['POST'])
 def register_plant():
-    """Register a new plant"""
+    """Register a new plant (no assignment here)"""
     try:
-        data = request.json
+        data = request.json or {}
+
+        # Reject any attempt to assign via this endpoint
+        if 'user_id' in data and data['user_id']:
+            return jsonify({
+                'error': "User assignment is not allowed in this endpoint. "
+                         "Register the plant first, then assign via a dedicated assignment endpoint."
+            }), 400
+
         plant_id = str(uuid.uuid4())
         name = data.get('name')
         species = data.get('species')
         location = data.get('location')
         thresholds = json.dumps(data.get('thresholds', {}))
         care_info = json.dumps(data.get('care_info', {}))
-        user_id = data.get('user_id')
-        
-        # Insert plant without user_id
+
         query = """
             INSERT INTO plants (id, name, species, location, thresholds, care_info)
             VALUES (%s, %s, %s, %s, %s, %s)
             RETURNING id
         """
         result = execute_query(query, (plant_id, name, species, location, thresholds, care_info))
-        
+
         if result:
-            # If user_id is provided, create assignment in user_plants table
-            if user_id:
-                assign_query = """
-                    INSERT INTO user_plants (user_id, plant_id, assigned_at)
-                    VALUES (%s, %s, NOW())
-                """
-                execute_query(assign_query, (user_id, plant_id))
-                logger.info(f"Assigned plant {plant_id} to user {user_id}")
-            
             logger.info(f"Registered plant: {name} with ID {plant_id}")
             return jsonify({
                 'id': plant_id,
@@ -236,12 +237,11 @@ def register_plant():
                 'species': species,
                 'location': location,
                 'thresholds': data.get('thresholds', {}),
-                'care_info': data.get('care_info', {}),
-                'user_id': user_id
+                'care_info': data.get('care_info', {})
             }), 201
         else:
             return jsonify({'error': 'Failed to register plant'}), 500
-            
+
     except Exception as e:
         logger.error(f"Plant registration failed: {e}")
         return jsonify({'error': str(e)}), 500
@@ -251,7 +251,10 @@ def list_plants():
     """List all plants"""
     try:
         query = """
-            SELECT p.*, u.display_name as user_name
+            SELECT 
+                p.*,
+                up.user_id AS user_id,
+                u.display_name AS user_name
             FROM plants p
             LEFT JOIN user_plants up ON p.id = up.plant_id
             LEFT JOIN users u ON up.user_id = u.id
@@ -283,10 +286,13 @@ def list_active_plants():
     """List all active plants with user assignments"""
     try:
         query = """
-            SELECT p.*, u.display_name as user_name
+            SELECT 
+                p.*,
+                up.user_id AS user_id,
+                u.display_name AS user_name
             FROM plants p
-            INNER JOIN user_plants up ON p.id = up.plant_id
-            INNER JOIN users u ON up.user_id = u.id
+            LEFT JOIN user_plants up ON p.id = up.plant_id
+            LEFT JOIN users u ON up.user_id = u.id
             WHERE p.active = TRUE
             ORDER BY p.created_at DESC
         """
@@ -315,9 +321,13 @@ def get_plant(plant_id):
     """Get a specific plant"""
     try:
         query = """
-            SELECT p.*, u.display_name as user_name
+            SELECT 
+                p.*,
+                up.user_id AS user_id,           -- keep API field stable for clients
+                u.display_name AS user_name
             FROM plants p
-            LEFT JOIN users u ON p.user_id = u.id
+            LEFT JOIN user_plants up ON p.id = up.plant_id
+            LEFT JOIN users u       ON up.user_id = u.id
             WHERE p.id = %s AND p.active = TRUE
         """
         result = execute_query(query, (plant_id,))
@@ -340,62 +350,50 @@ def get_plant(plant_id):
 
 @app.route('/plants/<plant_id>', methods=['PATCH'])
 def update_plant(plant_id):
-    """Update a plant"""
+    """Update a plant (no assignment here)"""
     try:
-        data = request.json
-        
-        # Handle user_id assignment separately
-        user_id = data.pop('user_id', None) if 'user_id' in data else None
-        
-        # Build dynamic update query for plant fields
+        data = request.json or {}
+
+        # Reject any attempt to assign via this endpoint
+        if 'user_id' in data:
+            return jsonify({
+                'error': "User assignment updates are not allowed in this endpoint. "
+                         "Use a dedicated assignment endpoint to manage user↔plant relationships."
+            }), 400
+
+        # Build dynamic update query for plant fields only
         set_clauses = []
         params = []
-        
+
         for key, value in data.items():
             if key in ['thresholds', 'care_info'] and value is not None:
                 set_clauses.append(f"{key} = %s")
                 params.append(json.dumps(value))
-            elif value is not None:
+            elif key in ['name', 'species', 'location', 'active'] and value is not None:
                 set_clauses.append(f"{key} = %s")
                 params.append(value)
-        
-        # Update plant fields if any
+            # ignore other fields silently
+
         if set_clauses:
             set_clauses.append("updated_at = NOW()")
             params.append(plant_id)
-            
             query = f"""
-                UPDATE plants 
+                UPDATE plants
                 SET {', '.join(set_clauses)}
                 WHERE id = %s AND active = TRUE
             """
-            
             result = execute_query(query, params)
             if result == 0:
                 return jsonify({'error': 'Plant not found'}), 404
-        
-        # Handle user assignment
-        if user_id is not None:
-            # Remove existing assignments
-            delete_query = "DELETE FROM user_plants WHERE plant_id = %s"
-            execute_query(delete_query, (plant_id,))
-            
-            # Add new assignment
-            if user_id:  # Only assign if user_id is not None/empty
-                assign_query = """
-                    INSERT INTO user_plants (user_id, plant_id, assigned_at)
-                    VALUES (%s, %s, NOW())
-                """
-                execute_query(assign_query, (user_id, plant_id))
-                logger.info(f"Assigned plant {plant_id} to user {user_id}")
-        
+
         logger.info(f"Updated plant: {plant_id}")
         return jsonify({'message': 'Plant updated successfully'}), 200
-            
+
     except Exception as e:
         logger.error(f"Failed to update plant: {e}")
         return jsonify({'error': str(e)}), 500
 
+# User endpoints
 @app.route('/users', methods=['POST'])
 def register_user():
     """Register a new user"""
@@ -459,6 +457,48 @@ def activate_user(user_id):
         logger.error(f"Failed to activate user: {e}")
         return jsonify({'error': str(e)}), 500
 
+# User-Plant assignment endpoints
+@app.route('/user_plants', methods=['POST'])
+def assign_user_to_plant():
+    """Explicitly assign a plant to a user"""
+    try:
+        data = request.json or {}
+        user_id = data.get('user_id')
+        plant_id = data.get('plant_id')
+        if not user_id or not plant_id:
+            return jsonify({'error': 'user_id and plant_id are required'}), 400
+
+        # Ensure both exist
+        user_exists = execute_query("SELECT 1 FROM users WHERE id = %s", (user_id,))
+        plant_exists = execute_query("SELECT 1 FROM plants WHERE id = %s AND active = TRUE", (plant_id,))
+        if not user_exists:
+            return jsonify({'error': 'User not found'}), 404
+        if not plant_exists:
+            return jsonify({'error': 'Plant not found or inactive'}), 404
+
+        # One owner per plant: drop existing then insert
+        execute_query("DELETE FROM user_plants WHERE plant_id = %s", (plant_id,))
+        execute_query("""
+            INSERT INTO user_plants (user_id, plant_id, assigned_at)
+            VALUES (%s, %s, NOW())
+        """, (user_id, plant_id))
+
+        return jsonify({'message': 'Assigned', 'plant_id': plant_id, 'user_id': user_id}), 201
+    except Exception as e:
+        logger.error(f"Assignment failed: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/user_plants/<plant_id>', methods=['DELETE'])
+def unassign_plant(plant_id):
+    """Remove any assignment for a plant"""
+    try:
+        execute_query("DELETE FROM user_plants WHERE plant_id = %s", (plant_id,))
+        return '', 204
+    except Exception as e:
+        logger.error(f"Unassign failed: {e}")
+        return jsonify({'error': str(e)}), 500
+
+# Health check endpoints
 @app.route('/health', methods=['GET'])
 def health_check():
     """Simple health check endpoint"""

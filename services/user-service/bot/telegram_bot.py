@@ -22,41 +22,45 @@ CATALOGUE_API_URL = os.environ.get('CATALOGUE_API_URL', 'http://catalogue-servic
 
 # Helper: get or create user in catalogue for a Telegram chat_id
 def get_or_create_user(chat_id, username=None, display_name=None):
-    # Use Telegram username for lookup/creation
-    lookup_username = username or str(chat_id)
+    chat_id_str = str(chat_id)
     try:
-        # First try to get all users
+        # 1) find by telegram_id first (authoritative)
         resp = requests.get(f"{CATALOGUE_API_URL}/users", timeout=5)
-        if resp.status_code != 200:
-            logging.error(f"[CATALOGUE] Failed to get users: {resp.status_code} {resp.text}")
-        else:
-            users = resp.json()
-            for user in users:
-                if user.get('username') == lookup_username:
-                    logging.info(f"[CATALOGUE] Found existing user: {user}")
-                    return user['id']
-        
-        # If not found, create user in catalogue-service
+        if resp.status_code == 200:
+            for u in resp.json():
+                if (u.get("telegram_id") or "") == chat_id_str:
+                    logging.info(f"[CATALOGUE] Found by telegram_id: {u}")
+                    return u["id"]
+
+        # 2) fallback: find by username if present
+        lookup_username = username or chat_id_str
+        if resp.status_code == 200:
+            for u in resp.json():
+                if (u.get("username") or "") == lookup_username:
+                    # PATCH user to add telegram_id so it’s linked from now on
+                    try:
+                        requests.post(f"{CATALOGUE_API_URL}/users/{u['id']}/activate", timeout=5)
+                    except Exception:
+                        pass
+                    logging.info(f"[CATALOGUE] Found by username: {u}")
+                    return u["id"]
+
+        # 3) create with telegram_id
         payload = {
-            'username': lookup_username,
-            'display_name': display_name or lookup_username
+            "username": lookup_username,
+            "display_name": display_name or lookup_username,
+            "telegram_id": chat_id_str,
+            "email": None
         }
-        logging.info(f"[CATALOGUE] Creating new user with payload: {payload}")
-        resp = requests.post(f"{CATALOGUE_API_URL}/users", json=payload, timeout=5)
-        
-        if resp.status_code == 201:
-            user = resp.json()
-            logging.info(f"[CATALOGUE] Successfully created user: {user}")
-            return user['id']
-        else:
-            logging.error(f"[CATALOGUE] Failed to create user: {resp.status_code} {resp.text}")
-    except requests.exceptions.Timeout:
-        logging.error(f"[CATALOGUE] Timeout connecting to catalogue service")
-    except requests.exceptions.ConnectionError:
-        logging.error(f"[CATALOGUE] Failed to connect to catalogue service")
+        logging.info(f"[CATALOGUE] Creating user: {payload}")
+        create = requests.post(f"{CATALOGUE_API_URL}/users", json=payload, timeout=5)
+        if create.status_code == 201:
+            return create.json()["id"]
+        logging.error(f"[CATALOGUE] Create failed: {create.status_code} {create.text}")
     except Exception as e:
-        logging.error(f"[CATALOGUE] Unexpected error: {str(e)}")
+        logging.error(f"[CATALOGUE] get_or_create_user error: {e}")
     return None
+
 
 def get_or_create_local_user(telegram_id, username=None, display_name=None):
     """Get or create user in local database with proper telegram_id handling"""
@@ -125,6 +129,37 @@ last_sent_data = {}
 last_plant_detail_msg = {}
 plant_last_status = {}  # (plant_id) -> last_status_str
 
+def fetch_latest_flat_readings(plant_id, timeout=5):
+    """
+    Returns a dict like:
+      {"temperature": 23.1, "humidity": 62.5, "soil_moisture": 580, "lighting": "OFF"}
+    by aggregating the latest row per field from sensor-data-service.
+    """
+    try:
+        base_url = rest_api_url.split('?')[0]
+        resp = requests.get(base_url, params={"plant_id": plant_id}, timeout=timeout)
+        if resp.status_code != 200:
+            logging.warning(f"[SENSOR] status={resp.status_code} for plant {plant_id}")
+            return {}
+
+        payload = resp.json()
+        data_list = payload.get("data", []) if isinstance(payload, dict) else []
+        latest = {}
+        for row in data_list:
+            f = row.get("field")
+            t = row.get("time")
+            v = row.get("value")
+            if not f:
+                continue
+            if f not in latest or (t and t > latest[f].get("time", "")):
+                latest[f] = {"value": v, "time": t}
+        flat = {k: v["value"] for k, v in latest.items()}
+        return flat
+    except Exception as e:
+        logging.error(f"[SENSOR] fetch_latest_flat_readings error for {plant_id}: {e}")
+        return {}
+
+
 # Function to poll data and push updates
 # Ensure 'application' is a global instance
 application = ApplicationBuilder().token(bot_token).build()
@@ -173,7 +208,8 @@ def poll_and_push_sensor_data():
                     text = f"🌱 Plant {plant_id} update:\n" + "\n".join(f"{k}: {v}" for k, v in data.items())
                     try:
                         logging.info(f"[NOTIFY] About to send SENSOR DATA to user {telegram_user_id} for plant {plant_id}")
-                        application.bot.send_message(chat_id=telegram_user_id, text=text)
+                        import asyncio
+                        asyncio.run(application.bot.send_message(chat_id=telegram_user_id, text=text))
                         logging.info(f"[NOTIFY] Sensor data message sent to user {telegram_user_id}")
                     except Exception as e:
                         logging.error(f"[NOTIFY] Failed to send sensor data to user {telegram_user_id}: {e}")
@@ -275,7 +311,6 @@ def sync_assignments_from_catalogue():
                 if existing_plant_result:
                     plant_id = existing_plant_result[0]['id']
                     # Update assignment
-                    assign_plant_to_user(local_user_id, plant_id)
                     logging.info(f"[SYNC] Updated assignment: local_user_id={local_user_id}, plant_id={plant_id}")
                 else:
                     # Add plant to local DB
@@ -328,7 +363,7 @@ def notify():
     return jsonify({'status': 'ok'})
 #
 ##
-### Add this logic: After a plant is assigned to user send message automatically
+### After a plant is assigned to user send message automatically
 ##
 #
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -364,21 +399,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
             if catalogue_plants:
                 logging.info(f"[AUTO-ASSIGN] Auto-assigned {len(catalogue_plants)} plants to telegram user")
-                
-        # Also check if there are any unassigned plants and assign them to this user
-        unassigned_plants_resp = requests.get(f"{CATALOGUE_API_URL}/plants", timeout=5)
-        if unassigned_plants_resp.status_code == 200:
-            all_plants = unassigned_plants_resp.json()
-            unassigned_plants = [p for p in all_plants if not p.get('user_id')]
-            
-            # Assign unassigned plants to this user
-            for plant in unassigned_plants[:3]:  # Limit to 3 plants to avoid spam
-                plant_id = plant['id']
-                assign_plant_to_user(plant_id, user_id)
-                logging.info(f"[AUTO-ASSIGN] Assigned unassigned plant {plant_id} to telegram user {user_id}")
-                
-            if unassigned_plants:
-                logging.info(f"[AUTO-ASSIGN] Auto-assigned {min(len(unassigned_plants), 3)} unassigned plants to telegram user")
                 
     except Exception as e:
         logging.error(f"[AUTO-ASSIGN] Failed to auto-assign plants: {e}")
@@ -449,34 +469,23 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         # Get sensor data for this plant
         try:
-            base_url = rest_api_url
-            url = f"{base_url}?plant_id={plant_id}"
-            data_resp = requests.get(url, timeout=5)
-            
-            if data_resp.status_code == 200:
-                payload = data_resp.json()
-                data_list = payload.get('data') if isinstance(payload, dict) else None
-                data = data_list[0] if data_list else {}
-                
-                if isinstance(data, dict):
-                    temp = data.get("temperature") or data.get("field1", "N/A")
-                    humidity = data.get("humidity") or data.get("field2", "N/A")
-                    soil = data.get("soil_moisture") or data.get("field3", "N/A")
-                    
-                    status_message += f"🌱 <b>{plant_name}</b> ({plant_species})\n"
-                    status_message += f"   🌡️ Temp: {temp}°C\n"
-                    status_message += f"   💧 Humidity: {humidity}%\n"
-                    status_message += f"   🌱 Soil: {soil}\n\n"
-                else:
-                    status_message += f"🌱 <b>{plant_name}</b> ({plant_species})\n"
-                    status_message += f"   ❌ No sensor data available\n\n"
+            flat = fetch_latest_flat_readings(plant_id, timeout=5)
+            if flat:
+                temp = flat.get("temperature", "N/A")
+                humidity = flat.get("humidity", "N/A")
+                soil = flat.get("soil_moisture", "N/A")
+
+                status_message += f"🌱 <b>{plant_name}</b> ({plant_species})\n"
+                status_message += f"   🌡️ Temp: {temp}°C\n"
+                status_message += f"   💧 Humidity: {humidity}%\n"
+                status_message += f"   🌱 Soil: {soil}\n\n"
             else:
                 status_message += f"🌱 <b>{plant_name}</b> ({plant_species})\n"
                 status_message += f"   ❌ No sensor data available\n\n"
         except Exception as e:
             status_message += f"🌱 <b>{plant_name}</b> ({plant_species})\n"
             status_message += f"   ❌ Error fetching data\n\n"
-    
+
     await update.message.reply_text(status_message, parse_mode='HTML')
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -718,52 +727,17 @@ def get_plant_detail(plant_id):
     # Fetch latest sensor data for this plant
     sensor_data = {"temperature": "-", "humidity": "-", "soil_moisture": "-", "lighting": "-"}
     try:
-        base_url = rest_api_url.split('?')[0]
-        url = f"{base_url}?plant_id={plant_id}"
-        logging.info(f"Requesting sensor data from: {url}")
-        data_resp = requests.get(url)
-        logging.info(f"Sensor data response: {data_resp.status_code} {data_resp.text}")
-        if data_resp.status_code == 200:
-            data = data_resp.json()
-            if isinstance(data, list) and data:
-                data = data[-1]
-            if isinstance(data, dict):
-                sensor_data = {
-                    "temperature": data.get("temperature") or data.get("field1", "-"),
-                    "humidity": data.get("humidity") or data.get("field2", "-"),
-                    "soil_moisture": data.get("soil_moisture") or data.get("field3", "-"),
-                    "lighting": data.get("lighting", "-")
-                }
-        else:
-            # Try to find a plant_id with data and auto-assign it
-            logging.warning(f"No data for plant_id {plant_id}, searching for available plant with data...")
-            all_data_resp = requests.get(base_url)
-            if all_data_resp.status_code == 200:
-                payload_all = all_data_resp.json()
-                data_list = payload_all.get('data') if isinstance(payload_all, dict) else []
-                for entry in data_list:
-                    alt_plant_id = entry.get("plant_id")
-                    if not alt_plant_id:
-                        continue
-                    alt_resp = requests.get(f"{base_url}", params={"plant_id": alt_plant_id})
-                    if alt_resp.status_code == 200:
-                        alt_payload = alt_resp.json()
-                        alt_list = alt_payload.get('data') if isinstance(alt_payload, dict) else []
-                        if alt_list:
-                            alt_data = alt_list[0]
-                            sensor_data = {
-                                "temperature": alt_data.get("temperature") or alt_data.get("field1", "-"),
-                                "humidity": alt_data.get("humidity") or alt_data.get("field2", "-"),
-                                "soil_moisture": alt_data.get("soil_moisture") or alt_data.get("field3", "-"),
-                                "lighting": alt_data.get("lighting", "-")
-                            }
-                            try:
-                                requests.patch(f"{CATALOGUE_API_URL}/plants/{alt_plant_id}", json={"user_id": plant.get("user_id")})
-                            except Exception as e:
-                                logging.error(f"Failed to auto-assign plant: {e}")
-                            break
+        flat = fetch_latest_flat_readings(plant_id, timeout=5)
+        if flat:
+            sensor_data = {
+                "temperature": flat.get("temperature", "-"),
+                "humidity": flat.get("humidity", "-"),
+                "soil_moisture": flat.get("soil_moisture", "-"),
+                "lighting": flat.get("lighting", "-"),
+            }
     except Exception as e:
         logging.error(f"Failed to fetch sensor data: {e}")
+
     return plant, sensor_data
 
 async def show_plant_detail(update: Update, context: ContextTypes.DEFAULT_TYPE, plant_id):
