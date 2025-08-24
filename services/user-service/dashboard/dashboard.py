@@ -253,6 +253,7 @@ def assign_plant():
             plant_id = request.form.get('plant_id')
             
             # Assign plant by updating user_id in catalogue-service
+            # NEW (explicit assignment endpoint)
             update_resp = requests.post(
                 f"{CATALOGUE_API_URL}/user_plants",
                 json={"user_id": user_id, "plant_id": plant_id},
@@ -265,6 +266,7 @@ def assign_plant():
                 error = "User or plant not found."
             else:
                 error = f"Failed to assign plant: {update_resp.status_code}"
+
                 
         except Exception as e:
             logging.error(f"Error assigning plant: {e}")
@@ -279,7 +281,16 @@ def plant_status():
         # Fetch plants from catalogue-service
         plants_resp = requests.get(f"{CATALOGUE_API_URL}/plants", timeout=5)
         plants = plants_resp.json() if plants_resp.status_code == 200 else []
-        
+        # Preload users once: id -> display_name/username (fallback if plant has no user_name)
+        users_map = {}
+        try:
+            all_users_resp = requests.get(f"{CATALOGUE_API_URL}/users", timeout=5)
+            if all_users_resp.status_code == 200:
+                for u in all_users_resp.json():
+                    users_map[str(u.get('id'))] = u.get('display_name') or u.get('username') or 'Unknown'
+        except Exception as e:
+            logging.error(f"Error preloading users: {e}")
+
         # Fetch sensor data for each plant (from sensor-data-service)
         for plant in plants:
             try:
@@ -322,19 +333,13 @@ def plant_status():
                 plant['status'] = 'unknown'
             
             # Get owner name
-            if plant.get('user_id'):
-                try:
-                    user_resp = requests.get(f"{CATALOGUE_API_URL}/users/{plant['user_id']}", timeout=5)
-                    if user_resp.status_code == 200:
-                        user_data = user_resp.json()
-                        plant['owner_name'] = user_data.get('display_name') or user_data.get('username', 'Unknown')
-                    else:
-                        plant['owner_name'] = 'Unknown'
-                except Exception as e:
-                    logging.error(f"Error fetching user data: {e}")
-                    plant['owner_name'] = 'Unknown'
+            if plant.get('user_name'):
+                plant['owner_name'] = plant['user_name']
+            elif plant.get('user_id'):
+                plant['owner_name'] = users_map.get(str(plant['user_id']), 'Unknown')
             else:
                 plant['owner_name'] = 'Unassigned'
+
         
     except Exception as e:
         logging.error(f"Error loading plant status: {e}")
@@ -343,29 +348,56 @@ def plant_status():
     return render_template('plant_status.html', plants=plants)
 
 @app.route('/actuator', methods=['POST'])
+@app.route('/actuator', methods=['POST'])
 def actuator_control():
     """Control actuators (water, LED)"""
     try:
-        data = request.get_json()
-        action = data.get('action')
+        data = request.get_json() or {}
+        action = (data.get('action') or '').strip().lower()
         plant_id = data.get('plant_id')
-        
+        value = data.get('value')
+
         if not action or not plant_id:
-            return jsonify({'success': False, 'message': 'Missing action or plant_id'})
-        
-        # Forward request to sensor service
-        sensor_resp = requests.post(f"{SENSOR_API_URL}/actuator", 
-                                   json={'action': action, 'plant_id': plant_id}, 
-                                   timeout=5)
-        
-        if sensor_resp.status_code == 200:
-            return jsonify({'success': True, 'message': f'{action} action completed'})
+            return jsonify({'success': False, 'message': 'Missing action or plant_id'}), 400
+
+        # Normalize dashboard actions to sensor-service contract
+        # sensor-service expects: POST /actuator  {"action":"led"|"water","value":..., "plant_id": "..."}
+        if action in ('toggle_led',):
+            forward = {'action': 'led', 'plant_id': plant_id, 'value': 'toggle'}
+        elif action in ('led', 'lighting'):
+            forward = {'action': 'led', 'plant_id': plant_id, 'value': (value if value is not None else 'toggle')}
+        elif action in ('water', 'watering'):
+            # coerce value to boolean; default True if omitted
+            if isinstance(value, str):
+                val_norm = value.lower() in ('1', 'true', 'on', 'start', 'enable', 'yes')
+            else:
+                val_norm = bool(value) if value is not None else True
+            forward = {'action': 'water', 'plant_id': plant_id, 'value': val_norm}
         else:
-            return jsonify({'success': False, 'message': f'Sensor service error: {sensor_resp.status_code}'})
-            
+            return jsonify({'success': False, 'message': f'Unsupported action: {action}'}), 400
+
+        # Build URL safely whether SENSOR_API_URL ends with /actuator or not
+        sensor_url = SENSOR_API_URL.rstrip('/')
+        if not sensor_url.endswith('/actuator'):
+            sensor_url = f"{sensor_url}/actuator"
+
+        sensor_resp = requests.post(sensor_url, json=forward, timeout=5)
+
+        # Log for quick debugging
+        logging.info(f"[ACTUATOR] Forwarded -> {sensor_url} payload={forward} "
+                     f"resp={sensor_resp.status_code} {sensor_resp.text}")
+
+        if 200 <= sensor_resp.status_code < 300:
+            return jsonify({'success': True, 'message': f"{forward['action']} command accepted"})
+        else:
+            # bubble up exact error text to the UI
+            return jsonify({'success': False,
+                            'message': f"Sensor service error: {sensor_resp.status_code} {sensor_resp.text}"}), 400
+
     except Exception as e:
         logging.error(f"Error controlling actuator: {e}")
-        return jsonify({'success': False, 'message': f'Error: {str(e)}'})
+        return jsonify({'success': False, 'message': f'Error: {str(e)}'}), 500
+
 
 @app.route('/health')
 def health_check():
