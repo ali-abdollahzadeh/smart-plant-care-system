@@ -19,6 +19,8 @@ bot_token = config['telegram']['bot_token']
 rest_api_url = os.environ.get('REST_API_URL', 'http://sensor-data-service:5004/data')
 SENSOR_API_URL = os.environ.get('SENSOR_API_URL', 'http://sensor-service:5002/actuator')
 CATALOGUE_API_URL = os.environ.get('CATALOGUE_API_URL', 'http://catalogue-service:5000')
+USER_SERVICE_PORT = int(os.environ.get("USER_SERVICE_PORT", "5600"))
+
 
 # Helper: get or create user in catalogue for a Telegram chat_id
 def get_or_create_user(chat_id, username=None, display_name=None):
@@ -104,15 +106,13 @@ def register_plant_for_user(user_id, name, type_, thresholds, species=None, loca
     # Notify user via Telegram
     telegram_user_id = get_telegram_user_id_for_db_user(user_id)
     if telegram_user_id:
-        import asyncio
-        from telegram.ext import ApplicationBuilder
-        app = ApplicationBuilder().token(bot_token).build()
-        async def send_plant_registered():
-            try:
-                await app.bot.send_message(chat_id=telegram_user_id, text=f"🌱 A new plant '{name}' has been registered for you!")
-            except Exception as e:
-                logging.error(f"Failed to notify user {telegram_user_id} about new plant: {e}")
-        asyncio.run(send_plant_registered())
+        # schedule send on the running bot loop
+        tg_app.create_task(
+            tg_app.bot.send_message(
+                chat_id=telegram_user_id,
+                text=f"🌱 A new plant '{name}' has been registered for you!"
+            )
+        )
     return plant_id
 
 logging.basicConfig(level=logging.INFO)
@@ -160,10 +160,10 @@ def fetch_latest_flat_readings(plant_id, timeout=5):
         return {}
 
 
-# Function to poll data and push updates
-# Ensure 'application' is a global instance
-application = ApplicationBuilder().token(bot_token).build()
+# Single global Telegram Application
+tg_app = ApplicationBuilder().token(bot_token).build()
 
+# Function to poll data and push updates
 def poll_and_push_sensor_data():
     logging.info("[NOTIFY] poll_and_push_sensor_data thread started")
     while True:
@@ -190,7 +190,7 @@ def poll_and_push_sensor_data():
                                 import asyncio
                                 try:
                                     logging.info(f"[NOTIFY] About to send WARNING message to user {telegram_user_id}")
-                                    asyncio.run(application.bot.send_message(chat_id=telegram_user_id, text=f"⚠️ Warning for your plant '{plant.get('name','')}': {status_str}"))
+                                    asyncio.run(tg_app.bot.send_message(chat_id=telegram_user_id, text=f"⚠️ Warning for your plant '{plant.get('name','')}': {status_str}"))
                                     logging.info(f"[NOTIFY] Warning message sent to user {telegram_user_id}")
                                 except Exception as e:
                                     logging.error(f"[NOTIFY] Failed to send warning to user {telegram_user_id}: {e}")
@@ -199,7 +199,7 @@ def poll_and_push_sensor_data():
                                 import asyncio
                                 try:
                                     logging.info(f"[NOTIFY] About to send OK message to user {telegram_user_id}")
-                                    asyncio.run(application.bot.send_message(chat_id=telegram_user_id, text=f"✅ All clear for your plant '{plant.get('name','')}'. Status: OK"))
+                                    asyncio.run(tg_app.bot.send_message(chat_id=telegram_user_id, text=f"✅ All clear for your plant '{plant.get('name','')}'. Status: OK"))
                                     logging.info(f"[NOTIFY] OK message sent to user {telegram_user_id}")
                                 except Exception as e:
                                     logging.error(f"[NOTIFY] Failed to send OK to user {telegram_user_id}: {e}")
@@ -209,7 +209,7 @@ def poll_and_push_sensor_data():
                     try:
                         logging.info(f"[NOTIFY] About to send SENSOR DATA to user {telegram_user_id} for plant {plant_id}")
                         import asyncio
-                        asyncio.run(application.bot.send_message(chat_id=telegram_user_id, text=text))
+                        tg_app.create_task(tg_app.bot.send_message(chat_id=telegram_user_id, text=text))
                         logging.info(f"[NOTIFY] Sensor data message sent to user {telegram_user_id}")
                     except Exception as e:
                         logging.error(f"[NOTIFY] Failed to send sensor data to user {telegram_user_id}: {e}")
@@ -219,31 +219,39 @@ def poll_and_push_sensor_data():
 
 # Auto-populate user_plant_assignments from DB on startup
 def load_user_plant_assignments():
+    """
+    Build user_plant_assignments from catalogue-service + local users table.
+    Avoids querying a non-existent plants.user_id column in the local DB.
+    """
     import db as userdb
+    global user_plant_assignments
     try:
-        # Get all users with their telegram_id
+        # map local user_id (UUID) -> telegram_id
         users_result = userdb.execute_query('SELECT id, telegram_id FROM users')
-        users = {str(row['id']): row['telegram_id'] for row in users_result if row['telegram_id']}
-        logging.info(f"[NOTIFY] Found users in local DB: {users}")
-        
-        # Get all plants with user assignments
-        plant_assignments_result = userdb.execute_query('SELECT id, user_id FROM plants WHERE user_id IS NOT NULL')
-        logging.info(f"[NOTIFY] Found plant assignments in local DB: {plant_assignments_result}")
-        
-        for row in plant_assignments_result:
-            plant_id = row['id']
-            user_id = row['user_id']
-            user_id_str = str(user_id)
-            if user_id_str in users:
-                telegram_id = users[user_id_str]
+        id_to_telegram = {str(row['id']): str(row['telegram_id']) for row in users_result if row.get('telegram_id')}
+        logging.info(f"[NOTIFY] Found users in local DB: {id_to_telegram}")
+
+        # pull plants from catalogue (they carry catalogue user_id)
+        resp = requests.get(f"{CATALOGUE_API_URL}/plants", timeout=5)
+        if resp.status_code != 200:
+            logging.error(f"[NOTIFY] Failed to fetch plants from catalogue: {resp.status_code} {resp.text}")
+            return
+
+        catalogue_plants = resp.json()
+        user_plant_assignments.clear()
+
+        for p in catalogue_plants:
+            owner = p.get('user_id')  # catalogue user_id (UUID)
+            if owner and str(owner) in id_to_telegram:
+                tg_id_str = id_to_telegram[str(owner)]
                 try:
-                    user_plant_assignments[int(telegram_id)] = plant_id
-                    logging.info(f"[NOTIFY] Added assignment: telegram_id={telegram_id}, plant_id={plant_id}")
+                    user_plant_assignments[int(tg_id_str)] = p['id']
+                    logging.info(f"[NOTIFY] Added assignment from catalogue: telegram_id={tg_id_str}, plant_id={p['id']}")
                 except Exception as e:
-                    logging.warning(f"[NOTIFY] Skipping user_id={user_id} with invalid telegram_id={telegram_id}: {e}")
-            else:
-                logging.warning(f"[NOTIFY] User {user_id} not found in users table")
-        logging.info(f"[NOTIFY] Loaded user_plant_assignments from DB: {user_plant_assignments}")
+                    logging.warning(f"[NOTIFY] Skipping mapping telegram_id={tg_id_str} -> plant_id={p.get('id')}: {e}")
+
+        logging.info(f"[NOTIFY] Loaded user_plant_assignments from catalogue: {user_plant_assignments}")
+
     except Exception as e:
         logging.error(f"[NOTIFY] Error loading user plant assignments: {e}")
 
@@ -333,24 +341,13 @@ def sync_assignments_from_catalogue():
 sync_assignments_from_catalogue()
 load_user_plant_assignments()
 
-# Start polling thread at startup (ensure this is at the top level, not inside any function)
-threading.Thread(target=poll_and_push_sensor_data, daemon=True).start()
 
-# When a plant is assigned to a user, update user_plant_assignments
-# Example: in your assignment handler or after assignment API call
-# user_plant_assignments[telegram_user_id] = plant_id
 
+    # Fan-out to all users
 def notify_user(message):
-    import asyncio
-    from telegram.ext import ApplicationBuilder
-    app = ApplicationBuilder().token(bot_token).build()
-    async def send_all():
-        for chat_id in user_chat_ids:
-            try:
-                await app.bot.send_message(chat_id=chat_id, text=message)
-            except Exception as e:
-                logging.error(f"Failed to notify user {chat_id}: {e}")
-    asyncio.run(send_all())
+    for chat_id in list(user_chat_ids):
+        tg_app.create_task(tg_app.bot.send_message(chat_id=chat_id, text=message))
+
 
 @app.route('/notify', methods=['POST'])
 def notify():
@@ -877,21 +874,61 @@ async def handle_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
 def start_bot():
-    app = ApplicationBuilder().token(bot_token).build()
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("plants", plants_command))
-    app.add_handler(CommandHandler("status", status_command))
-    app.add_handler(CommandHandler("report", report_command))
-    app.add_handler(CommandHandler("help", help_command))
-    app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_text_message))
-    app.add_handler(CallbackQueryHandler(handle_plant_select, pattern="^plant_"))
-    app.add_handler(CallbackQueryHandler(handle_action, pattern="^(toggle_light_|water_|back_to_grid)"))
-    app.run_polling()
+    import asyncio
+
+    # Ensure this thread has an event loop
+    try:
+        asyncio.get_event_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+    # Make sure no webhook is set (polling conflicts with webhook)
+    try:
+        asyncio.get_event_loop().run_until_complete(
+            tg_app.bot.delete_webhook(drop_pending_updates=True)
+        )
+    except Exception as e:
+        logging.warning(f"delete_webhook failed (continuing): {e}")
+
+
+    # 2) Register handlers exactly once
+    tg_app.add_handler(CommandHandler("start", start))
+    tg_app.add_handler(CommandHandler("plants", plants_command))
+    tg_app.add_handler(CommandHandler("status", status_command))
+    tg_app.add_handler(CommandHandler("report", report_command))
+    tg_app.add_handler(CommandHandler("help", help_command))
+    tg_app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_text_message))
+    tg_app.add_handler(CallbackQueryHandler(handle_plant_select, pattern="^plant_"))
+    tg_app.add_handler(CallbackQueryHandler(handle_action, pattern="^(toggle_light_|water_|back_to_grid)"))
+
+    tg_app.run_polling(
+        drop_pending_updates=True,
+        allowed_updates=Update.ALL_TYPES,
+        stop_signals=None,  # running in a thread: avoid installing signal handlers
+    )
+
 
 if __name__ == "__main__":
     db.ensure_db()
-    threading.Thread(target=start_bot).start()
-    app.run(host='0.0.0.0', port=5500)
+
+    # Single-instance lock (Linux)
+    try:
+        import fcntl, sys
+        _bot_lock = open('/tmp/telegram_bot.lock', 'w')
+        fcntl.flock(_bot_lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except Exception:
+        logging.error("Another Telegram bot instance is already running in this container. Exiting.")
+        sys.exit(0)
+
+    # Optional: only run the bot in this service if env says so
+    if os.environ.get("RUN_TELEGRAM_BOT", "1") == "1":
+        threading.Thread(target=start_bot, daemon=True).start()
+
+    threading.Thread(target=poll_and_push_sensor_data, daemon=True).start()
+
+    app.run(host='0.0.0.0', port=USER_SERVICE_PORT, debug=False, use_reloader=False)
+
 
 def get_telegram_user_id_for_db_user(user_id):
     # Look up telegram_id from DB for a given user_id
