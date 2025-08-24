@@ -113,9 +113,13 @@ def get_all_plants():
     """Get all active plants"""
     try:
         query = """
-            SELECT p.*, u.display_name as user_name 
+            SELECT 
+                p.*,
+                up.user_id AS user_id,
+                u.display_name AS user_name
             FROM plants p
-            LEFT JOIN users u ON p.user_id = u.id
+            LEFT JOIN user_plants up ON p.id = up.plant_id
+            LEFT JOIN users u ON up.user_id = u.id
             WHERE p.active = TRUE
             ORDER BY p.created_at DESC
         """
