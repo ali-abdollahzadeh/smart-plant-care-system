@@ -30,7 +30,7 @@ class SensorSimulator:
             print(f"[SIM] Unknown actuator: {action}")
         print(f"[SIM] set_actuator called: action={action}, value={value}, led_state={self.led_state}, watering_state={self.watering_state}")
 
-    def get_actuator_state(self):
+    def get_actuator_state(self): 
         return {
             'led': self.led_state,
             'watering': self.watering_state
@@ -49,9 +49,9 @@ class SensorSimulator:
         return round(temp, 2)
 
     def generate_humidity(self): 
-        base = (self.hum_max + self.hum_min) / 2
-        amplitude = (self.hum_max - self.hum_min) / 2
-        hum = base - amplitude * math.sin(self.t / 20.0) + random.uniform(-2, 2) #
+        base = (self.hum_max + self.hum_min) / 2 # Base humidity
+        amplitude = (self.hum_max - self.hum_min) / 2 # Amplitude of the sinusoidal function
+        hum = base - amplitude * math.sin(self.t / 20.0) + random.uniform(-2, 2) # Sinusoidal function to simulate humidity variations
         return round(hum, 2) 
 
     def generate_soil_moisture(self): 
@@ -67,10 +67,11 @@ class SensorSimulator:
         # Add small noise
         return int(self._current_moisture + random.uniform(-5, 5))
 
-
+    # Generate lighting state
     def generate_lighting(self):
         return 'ON' if self.led_state else 'OFF'
 
+    # Generate next sensor reading
     def next(self):
         self.t += 1
         return {
