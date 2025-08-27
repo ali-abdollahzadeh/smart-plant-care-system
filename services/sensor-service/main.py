@@ -101,8 +101,21 @@ def on_message(client, userdata, msg):
 
 mqtt_client.on_connect = on_connect
 mqtt_client.on_message = on_message
-mqtt_client.connect(mqtt_conf['broker_url'], mqtt_conf.get('port', 1883), 60)
-threading.Thread(target=mqtt_client.loop_forever, daemon=True).start()
+
+# Start MQTT client in background thread with retry logic
+def start_mqtt_client():
+    """Start MQTT client with connection retry logic"""
+    while True:
+        try:
+            logging.info(f"Attempting to connect to MQTT broker at {mqtt_conf['broker_url']}:{mqtt_conf.get('port', 1883)}")
+            mqtt_client.connect(mqtt_conf['broker_url'], mqtt_conf.get('port', 1883), 60)
+            mqtt_client.loop_forever()
+        except Exception as e:
+            logging.error(f"MQTT connection error: {e}")
+            logging.info("Retrying MQTT connection in 5 seconds...")
+            time.sleep(5)
+
+threading.Thread(target=start_mqtt_client, daemon=True).start()
 
 # Flask REST API for actuator control
 @app.route('/actuator', methods=['POST'])
