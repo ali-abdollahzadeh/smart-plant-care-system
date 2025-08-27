@@ -125,6 +125,47 @@ last_sent_data = {}
 last_plant_detail_msg = {}
 plant_last_status = {}  # (plant_id) -> last_status_str
 
+<<<<<<< Updated upstream
+=======
+def fetch_latest_flat_readings(plant_id, timeout=5):
+    """
+    Returns a dict like:
+      {"temperature": 23.1, "humidity": 62.5, "soil_moisture": 580, "lighting": "OFF"}
+    by getting latest data from sensor-data-service /data/latest endpoint.
+    """
+    try:
+        # Use sensor-data-service /data/latest endpoint
+        sensor_data_url = rest_api_url.replace('/data', '/data/latest')
+        resp = requests.get(sensor_data_url, params={"plant_id": plant_id}, timeout=timeout)
+        if resp.status_code != 200:
+            logging.warning(f"[SENSOR-DATA] status={resp.status_code} for plant {plant_id}")
+            return {}
+
+        payload = resp.json()
+        data_list = payload.get("data", []) if isinstance(payload, dict) else []
+        
+        # Extract latest sensor readings from InfluxDB data
+        flat = {}
+        if data_list:
+            # Get the latest record (should be only one with /data/latest)
+            latest_record = data_list[0]
+            flat = {
+                "temperature": latest_record.get("temperature", "-"),
+                "humidity": latest_record.get("humidity", "-"), 
+                "soil_moisture": latest_record.get("soil_moisture", "-"),
+                "lighting": latest_record.get("lighting", "OFF"),
+                "watering": latest_record.get("watering", False)
+            }
+        return flat
+    except Exception as e:
+        logging.error(f"[SENSOR-DATA] fetch_latest_flat_readings error for {plant_id}: {e}")
+        return {}
+
+
+# Single global Telegram Application
+tg_app = ApplicationBuilder().token(bot_token).build()
+
+>>>>>>> Stashed changes
 # Function to poll data and push updates
 # Ensure 'application' is a global instance
 application = ApplicationBuilder().token(bot_token).build()
@@ -135,10 +176,26 @@ def poll_and_push_sensor_data():
         logging.info(f"[NOTIFY] user_plant_assignments: {user_plant_assignments}")
         for telegram_user_id, plant_id in list(user_plant_assignments.items()):
             try:
-                resp = requests.get(f"{rest_api_url}", params={"plant_id": plant_id}, timeout=5)
+                # Use sensor-data-service /data/latest endpoint for database data
+                sensor_data_url = rest_api_url.replace('/data', '/data/latest')
+                resp = requests.get(sensor_data_url, params={"plant_id": plant_id}, timeout=5)
                 if resp.status_code == 200:
                     payload = resp.json()
-                    data = payload.get('data')[0] if isinstance(payload, dict) and payload.get('data') else {}
+                    data_list = payload.get('data', []) if isinstance(payload, dict) else []
+                    
+                    # Extract sensor data from InfluxDB response
+                    if data_list:
+                        latest_record = data_list[0]
+                        data = {
+                            "temperature": latest_record.get("temperature", "-"),
+                            "humidity": latest_record.get("humidity", "-"), 
+                            "soil_moisture": latest_record.get("soil_moisture", "-"),
+                            "lighting": latest_record.get("lighting", "OFF"),
+                            "watering": latest_record.get("watering", False)
+                        }
+                    else:
+                        data = {}
+                    
                     key = (telegram_user_id, plant_id)
                     # --- Status change notification logic ---
                     plant, _ = get_plant_detail(plant_id)
