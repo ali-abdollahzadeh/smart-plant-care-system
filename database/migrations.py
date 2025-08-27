@@ -48,14 +48,31 @@ def seed_postgres_data():
         
         # Insert sample plants
         for plant_data in SAMPLE_DATA['plants']:
+            # First, get the user_id from the telegram_id
+            user_query = "SELECT id FROM users WHERE telegram_id = %s"
+            user_result = execute_query(user_query, (plant_data['user_telegram_id'],))
+            
+            if not user_result or len(user_result) == 0:
+                logger.warning(f"User with telegram_id {plant_data['user_telegram_id']} not found, skipping plant")
+                continue
+                
+            user_id = user_result[0][0]  # First row, first column (id)
+            
             query = """
-                INSERT INTO plants (name, species, location, thresholds, care_info)
-                VALUES (%(name)s, %(species)s, %(location)s, %(thresholds)s, %(care_info)s)
+                INSERT INTO plants (name, species, location, user_id, thresholds, care_info)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                ON CONFLICT DO NOTHING
             """
             # Convert dict to JSON string for JSONB
-            plant_data['thresholds'] = json.dumps(plant_data['thresholds'])
-            plant_data['care_info'] = json.dumps(plant_data['care_info'])
-            execute_query(query, plant_data)
+            plant_params = (
+                plant_data['name'],
+                plant_data['species'], 
+                plant_data['location'],
+                user_id,
+                json.dumps(plant_data['thresholds']),
+                json.dumps(plant_data['care_info'])
+            )
+            execute_query(query, plant_params)
         
         # Insert sample devices
         for device_data in SAMPLE_DATA['devices']:
