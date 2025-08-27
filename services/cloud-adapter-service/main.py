@@ -1,10 +1,21 @@
+"""
+Cloud Adapter Service
+
+    Reads config from CONFIG_PATH (default: config.yaml)
+    Exposes REST API via rest_adapter (served on 0.0.0.0:5001), e.g., /data
+    Acts as a proxy to sensor-data-service for external cloud integrations
+    Auto-registers with Catalogue at CATALOGUE_URL as type "cloud-adapter"
+    Environment:
+        CONFIG_PATH: path to YAML config (default: config.yaml)
+        CATALOGUE_URL: service registry URL (default: http://catalogue-service:5000/services)
+        SENSOR_DATA_SERVICE_URL: sensor data service URL (default: http://sensor-data-service:5004)
+    Logging: INFO level to stdout
+"""
+
 import os
-import threading
 import logging
 import yaml
 import requests
-from flask import Flask
-from mqtt_subscriber import MqttSubscriber
 import rest_adapter
 
 
@@ -13,8 +24,6 @@ logging.basicConfig(level=logging.INFO, format='[%(asctime)s] %(levelname)s: %(m
 CONFIG_PATH = os.environ.get("CONFIG_PATH", "config.yaml")
 with open(CONFIG_PATH, 'r') as f:
     config = yaml.safe_load(f)
-
-mqtt_conf = config['mqtt']
 
 # Auto-register service in catalogue
 CATALOGUE_URL = os.environ.get('CATALOGUE_URL', 'http://catalogue-service:5000/services')
@@ -32,16 +41,9 @@ try:
 except Exception as e:
     logging.error(f"Could not register service in catalogue: {e}")
 
-subscriber = MqttSubscriber(
-    broker=mqtt_conf['broker_url'],
-    port=mqtt_conf.get('port', 1883),
-    subscribe_topic=mqtt_conf['publish_topic']
-)
-
 app = rest_adapter.app
 
 if __name__ == '__main__':
-    # Start MQTT subscriber in a background thread
-    threading.Thread(target=subscriber.start, daemon=True).start()
-    # Start Flask app
+    # Start Flask app - no MQTT needed, just proxy to sensor-data-service
+    logging.info("Starting Cloud Adapter Service as proxy to sensor-data-service")
     app.run(host='0.0.0.0', port=5001)

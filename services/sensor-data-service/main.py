@@ -12,6 +12,8 @@ import logging
 import yaml
 import json
 import requests
+import time
+import asyncio
 from datetime import datetime, timedelta
 from flask import Flask, request, jsonify
 import paho.mqtt.client as mqtt
@@ -105,6 +107,9 @@ def on_connect(client, userdata, flags, rc):
     else:
         logger.error(f"Failed to connect to MQTT broker: {rc}")
 
+def on_disconnect(client, userdata, rc):
+    logger.warning("Disconnected from MQTT broker")
+
 def on_message(client, userdata, msg):
     try:
         data = json.loads(msg.payload.decode())
@@ -114,7 +119,30 @@ def on_message(client, userdata, msg):
         logger.error(f"Error processing MQTT message: {e}")
 
 mqtt_client.on_connect = on_connect
+mqtt_client.on_disconnect = on_disconnect
 mqtt_client.on_message = on_message
+
+def start_mqtt_client():
+    """Start MQTT client with retry logic"""
+    max_retries = 10
+    retry_delay = 1
+    
+    for attempt in range(max_retries):
+        try:
+            logger.info(f"Attempting to connect to MQTT broker (attempt {attempt + 1}/{max_retries})")
+            mqtt_client.connect(mqtt_conf['broker_url'], mqtt_conf.get('port', 1883), 60)
+            mqtt_client.loop_start()
+            logger.info("MQTT client connected and loop started")
+            return True
+        except Exception as e:
+            logger.error(f"MQTT connection attempt {attempt + 1} failed: {e}")
+            if attempt < max_retries - 1:
+                time.sleep(retry_delay)
+                retry_delay = min(retry_delay * 2, 30)  # Exponential backoff, max 30 seconds
+            else:
+                logger.error("Max MQTT connection attempts reached")
+                
+    return False
 
 # REST API endpoints
 @app.route('/data', methods=['GET'])
@@ -174,15 +202,15 @@ def get_sensor_data():
 
 @app.route('/data/latest', methods=['GET'])
 def get_latest_data():
-    """Get latest sensor data for all plants"""
+    """Get latest sensor data for each plant with all sensor fields in a single record"""
     try:
         plant_id = request.args.get('plant_id')
         user_id = request.args.get('user_id')
         
-        # Build query for latest data
+        # Build query for latest data with pivot to get all fields in one record
         query = f'''
         from(bucket: "sensor_data")
-            |> range(start: -1h)
+            |> range(start: -24h)
             |> filter(fn: (r) => r["_measurement"] == "sensor_readings")
         '''
         
@@ -191,9 +219,11 @@ def get_latest_data():
         if user_id:
             query += f'|> filter(fn: (r) => r["user_id"] == "{user_id}")\n'
         
+        # Get the latest record for each plant and pivot by field
         query += '''
+            |> group(columns: ["plant_id"])
             |> last()
-            |> pivot(rowKey:["_time"], columnKey: ["_field"], valueColumn: "_value")
+            |> pivot(rowKey:["_time", "plant_id"], columnKey: ["_field"], valueColumn: "_value")
         '''
         
         result = query_data(query)
@@ -201,11 +231,12 @@ def get_latest_data():
         latest_data = []
         for table in result:
             for record in table.records:
+                # Extract all the tag values and pivoted field values
                 data_point = {
                     'time': record.get_time().isoformat(),
                     'plant_id': record.values.get('plant_id'),
                     'user_id': record.values.get('user_id'),
-                    'device_id': record.values.get('device_id'),
+                    'device_id': record.values.get('device_id'), 
                     'plant_name': record.values.get('plant_name'),
                     'location': record.values.get('location'),
                     'temperature': record.values.get('temperature'),
@@ -298,13 +329,9 @@ def health_check():
         }), 500
 
 if __name__ == '__main__':
-    # Start MQTT client
-    try:
-        mqtt_client.connect(mqtt_conf['broker_url'], mqtt_conf.get('port', 1883), 60)
-        threading.Thread(target=mqtt_client.loop_forever, daemon=True).start()
-        logger.info("MQTT client started")
-    except Exception as e:
-        logger.error(f"Failed to start MQTT client: {e}")
+    # Start MQTT client with retry logic
+    mqtt_thread = threading.Thread(target=start_mqtt_client, daemon=True)
+    mqtt_thread.start()
     
     # Start Flask app
     app.run(host='0.0.0.0', port=5004) 

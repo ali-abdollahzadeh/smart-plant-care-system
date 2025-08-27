@@ -1,4 +1,3 @@
-version: '3.8'
 services:
   mqtt-broker:
     image: eclipse-mosquitto:2.0
@@ -110,15 +109,10 @@ services:
       - ./services/cloud-adapter-service/config.yaml:/app/config.yaml:ro
     environment:
       - CONFIG_PATH=/app/config.yaml
-      - INFLUXDB_URL=http://influxdb:8086
-      - INFLUXDB_USERNAME=admin
-      - INFLUXDB_PASSWORD=password123
-      - INFLUXDB_ORG=smart_plant_care
-      - INFLUXDB_BUCKET=sensor_data
+      - SENSOR_DATA_SERVICE_URL=http://sensor-data-service:5004
     restart: unless-stopped
     depends_on:
-      - mqtt-broker
-      - influxdb
+      - sensor-data-service
 
   database-init:
     build:
@@ -172,17 +166,16 @@ services:
     environment:
       - CONFIG_PATH=/app/config.yaml
       - POSTGRES_URL=postgresql://plant_user:password123@postgres:5432/smart_plant_care
-      - INFLUXDB_URL=http://influxdb:8086
-      - INFLUXDB_USERNAME=admin
-      - INFLUXDB_PASSWORD=password123
-      - INFLUXDB_ORG=smart_plant_care
-      - INFLUXDB_BUCKET=sensor_data
+      - REST_API_URL=http://sensor-data-service:5004/data
+      - SENSOR_API_URL=http://sensor-service:5002/actuator
+      - CATALOGUE_API_URL=http://catalogue-service:5000
+      - SENSOR_DATA_API_URL=http://sensor-data-service:5004
     restart: unless-stopped
     depends_on:
       - database-init
-      - mqtt-broker
-      - postgres
-      - influxdb
+      - sensor-service
+      - sensor-data-service
+      - catalogue-service
     ports:
       - "5500:5500"
 
