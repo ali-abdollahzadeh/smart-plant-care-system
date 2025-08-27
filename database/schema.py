@@ -153,6 +153,7 @@ SAMPLE_DATA = {
             'name': 'Monstera Deliciosa',
             'species': 'Monstera',
             'location': 'living_room',
+            'user_telegram_id': '123456789',  # Reference to the test user
             'thresholds': {
                 'temperature': {'min': 18, 'max': 30},
                 'humidity': {'min': 40, 'max': 80},
