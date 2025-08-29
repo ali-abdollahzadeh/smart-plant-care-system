@@ -1,0 +1,36 @@
+[
+  {
+    "id": "influxdb_query",
+    "type": "influxdb in",
+    "z": "f6f2187d.f17ca8",
+    "influxdb": "influxdb_config",
+    "name": "Get sensor data",
+    "query": "from(bucket: \"sensor_data\") |> range(start: -1h) |> filter(fn: (r) => r._measurement == \"your_measurement\")",
+    "rawOutput": false,
+    "precision": "",
+    "retentionPolicy": "",
+    "org": "smart_plant_care",
+    "x": 420,
+    "y": 280,
+    "wires": [
+      [
+        "ui_chart"
+      ]
+    ]
+  },
+  {
+    "id": "influxdb_config",
+    "type": "influxdb",
+    "hostname": "influxdb",
+    "port": "8086",
+    "protocol": "http",
+    "database": "sensor_data",
+    "name": "InfluxDB",
+    "usetls": false,
+    "tls": "",
+    "influxdbVersion": "2.0",
+    "url": "http://influxdb:8086",
+    "timeout": "",
+    "rejectUnauthorized": false
+  }
+]

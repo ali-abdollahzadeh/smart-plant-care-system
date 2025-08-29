@@ -186,9 +186,13 @@ services:
       - "1880:1880"
     volumes:
       - nodered_data:/data
+    environment:
+      - TZ=Europe/Rome
+      - FLOW_FILE=flows.json
     restart: unless-stopped
     depends_on:
       - mqtt-broker
+
 
 volumes:
   nodered_data:

@@ -9,8 +9,8 @@ import threading
 import time
 import db
 from telegram.error import BadRequest
-from db import add_user, get_user_by_telegram_id, get_plants_for_user, get_all_plants, assign_plant_to_user, update_user, execute_query
-
+#from ..db import add_user, get_user_by_telegram_id, get_plants_for_user, get_all_plants, assign_plant_to_user, update_user, execute_query
+from services.user_service.db import add_user, get_user_by_telegram_id, get_plants_for_user, get_all_plants, assign_plant_to_user, update_user, execute_query
 CONFIG_PATH = os.environ.get("CONFIG_PATH", "config.yaml")
 with open(CONFIG_PATH, 'r') as f:
     config = yaml.safe_load(f)
