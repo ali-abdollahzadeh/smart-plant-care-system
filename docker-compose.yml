@@ -19,7 +19,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
-      - "5432:5432"
+      - "15432:5432"
     restart: unless-stopped
 
   # InfluxDB for time-series sensor data
@@ -180,12 +180,13 @@ services:
       - "5500:5500"
 
   nodered:
-    image: nodered/node-red:3.1
+    build: ./nodered
     container_name: nodered
     ports:
       - "1880:1880"
-    volumes:
-      - nodered_data:/data
+    # 移除 volumes 映射，让 Dockerfile 的 COPY 指令生效
+    # volumes:
+    #   - nodered_data:/data
     restart: unless-stopped
     depends_on:
       - mqtt-broker

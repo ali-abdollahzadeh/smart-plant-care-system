@@ -1,0 +1,244 @@
+[
+  {
+    "id": "7662828b17b20464",
+    "type": "tab",
+    "label": "InfluxDB Plant Dashboard",
+    "disabled": false,
+    "info": ""
+  },
+  {
+    "id": "e221376e.51a378",
+    "type": "ui_dropdown",
+    "z": "7662828b17b20464",
+    "name": "Select Plant",
+    "label": "Plant Name",
+    "tooltip": "",
+    "group": "e7b0222f.8339",
+    "order": 1,
+    "width": 8,
+    "height": 1,
+    "passthru": true,
+    "multiple": false,
+    "size": 1,
+    "topic": "plantName",
+    "topicType": "msg",
+    "payloadType": "flow",
+    "className": "",
+    "storeOut": true,
+    "x": 160,
+    "y": 140,
+    "wires": [
+      [
+        "61b4020a.e14b1c"
+      ]
+    ]
+  },
+  {
+    "id": "a918a24c.731e88",
+    "type": "function",
+    "z": "7662828b17b20464",
+    "name": "Prepare Flux Query",
+    "func": "const plantName = msg.payload;\n\nif (!plantName) {\n    // If no plant is selected, do nothing\n    return null;\n}\n\n// Query for the latest data from the selected plant\nconst fluxQuery = `\nfrom(bucket: \"sensor_data\")\n  |> range(start: -24h)\n  |> filter(fn: (r) => r._measurement == \"plant_thresholds\" and r.plant_name == \"${plantName}\")\n  |> last()\n`;\n\nmsg.query = fluxQuery;\n\nreturn msg;\n",
+    "outputs": 1,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 370,
+    "y": 140,
+    "wires": [
+      [
+        "b1b4020a.e14b1d"
+      ]
+    ]
+  },
+  {
+    "id": "b1b4020a.e14b1d",
+    "type": "influxdb in",
+    "z": "7662828b17b20464",
+    "name": "Read Plant Data",
+    "influxdb": "ed83a79d.f676b",
+    "query": "",
+    "precision": "",
+    "x": 570,
+    "y": 140,
+    "wires": [
+      [
+        "67d3d752.61066"
+      ]
+    ]
+  },
+  {
+    "id": "67d3d752.61066",
+    "type": "function",
+    "z": "7662828b17b20464",
+    "name": "Format for Gauges",
+    "func": "const result = msg.payload[0];\n\nif (!result) {\n    // If no data, return a message to reset the gauges\n    return null;\n}\n\n// Prepare payloads for each gauge node\nconst tempMsg = { payload: result.temperature_max, topic: 'Temperature Max (°C)' };\nconst humidityMsg = { payload: result.humidity_max, topic: 'Humidity Max (%)' };\nconst soilMsg = { payload: result.soil_moisture_max, topic: 'Soil Moisture Max (val)' };\n\n// You can also send min values to other gauges\nconst tempMinMsg = { payload: result.temperature_min, topic: 'Temperature Min (°C)' };\nconst humidityMinMsg = { payload: result.humidity_min, topic: 'Humidity Min (%)' };\nconst soilMinMsg = { payload: result.soil_moisture_min, topic: 'Soil Moisture Min (val)' };\n\nreturn [tempMsg, humidityMsg, soilMsg, tempMinMsg, humidityMinMsg, soilMinMsg];\n",
+    "outputs": 6,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 750,
+    "y": 140,
+    "wires": [
+      [
+        "d9994c92.176f5"
+      ],
+      [
+        "f9b76c8c.552d7"
+      ],
+      [
+        "2b20f922.38d77c"
+      ],
+      [],
+      [],
+      []
+    ]
+  },
+  {
+    "id": "d9994c92.176f5",
+    "type": "ui_gauge",
+    "z": "7662828b17b20464",
+    "name": "Temperature Max",
+    "group": "e7b0222f.8339",
+    "order": 2,
+    "width": 4,
+    "height": 3,
+    "gtype": "gage",
+    "title": "Temperature Max",
+    "label": "°C",
+    "format": "{{value}}",
+    "min": 0,
+    "max": 50,
+    "colors": [
+      "#00b500",
+      "#e6e600",
+      "#ca3838"
+    ],
+    "seg1": "20",
+    "seg2": "35",
+    "x": 980,
+    "y": 60,
+    "wires": []
+  },
+  {
+    "id": "f9b76c8c.552d7",
+    "type": "ui_gauge",
+    "z": "7662828b17b20464",
+    "name": "Humidity Max",
+    "group": "e7b0222f.8339",
+    "order": 3,
+    "width": 4,
+    "height": 3,
+    "gtype": "gage",
+    "title": "Humidity Max",
+    "label": "%",
+    "format": "{{value}}",
+    "min": 0,
+    "max": 100,
+    "colors": [
+      "#00b500",
+      "#e6e600",
+      "#ca3838"
+    ],
+    "seg1": "30",
+    "seg2": "70",
+    "x": 980,
+    "y": 120,
+    "wires": []
+  },
+  {
+    "id": "2b20f922.38d77c",
+    "type": "ui_gauge",
+    "z": "7662828b17b20464",
+    "name": "Soil Moisture Max",
+    "group": "e7b0222f.8339",
+    "order": 4,
+    "width": 4,
+    "height": 3,
+    "gtype": "gage",
+    "title": "Soil Moisture Max",
+    "label": "val",
+    "format": "{{value}}",
+    "min": 0,
+    "max": 1023,
+    "colors": [
+      "#ca3838",
+      "#e6e600",
+      "#00b500"
+    ],
+    "seg1": "300",
+    "seg2": "700",
+    "x": 990,
+    "y": 180,
+    "wires": []
+  },
+  {
+    "id": "e7b0222f.8339",
+    "type": "ui_group",
+    "name": "Plant Details",
+    "tab": "1537e28b.75f6e8",
+    "order": 1,
+    "disp": true,
+    "width": "12",
+    "collapse": false
+  },
+  {
+    "id": "ed83a79d.f676b",
+    "type": "influxdb",
+    "name": "InfluxDB 2.x",
+    "hostname": "localhost",
+    "port": "8086",
+    "protocol": "http",
+    "database": "sensor_data",
+    "retentionPolicy": "",
+    "x": 300,
+    "y": 300,
+    "wires": []
+  },
+  {
+    "id": "1537e28b.75f6e8",
+    "type": "ui_tab",
+    "name": "Plant Monitoring",
+    "icon": "dashboard",
+    "order": 1,
+    "disabled": false,
+    "hidden": false
+  },
+  {
+    "id": "61b4020a.e14b1c",
+    "type": "influxdb in",
+    "z": "7662828b17b20464",
+    "name": "Get Plant Names",
+    "influxdb": "ed83a79d.f676b",
+    "query": "import \"influxdata/influxdb/schema\"\n\nschema.tagValues(bucket: \"sensor_data\", tag: \"plant_name\")",
+    "precision": "",
+    "x": 360,
+    "y": 60,
+    "wires": [
+      [
+        "c9826d52.92388"
+      ]
+    ]
+  },
+  {
+    "id": "c9826d52.92388",
+    "type": "function",
+    "z": "7662828b17b20464",
+    "name": "Format for Dropdown",
+    "func": "if (!msg.payload || !Array.isArray(msg.payload)) {\n    return null;\n}\n\n// Get unique plant names from query result\nconst plantNames = msg.payload.map(row => row._value);\n\n// Format the list for the dropdown node\nmsg.payload = plantNames.map(name => ({ label: name, value: name }));\n\nreturn msg;\n",
+    "outputs": 1,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 580,
+    "y": 60,
+    "wires": [
+      [
+        "e221376e.51a378"
+      ]
+    ]
+  }
+]

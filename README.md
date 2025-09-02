@@ -61,8 +61,9 @@ The system consists of 11 Docker containers working together to provide comprehe
    - Sensor Data Service: <http://localhost:5004>
    - User Service: <http://localhost:5500>
    - User Dashboard: <http://localhost:5500>
-   - Node-RED Dashboard: <http://localhost:1880>
-   - PostgreSQL: localhost:5432
+   - Node-RED Editor: <http://localhost:1880>
+   - Node-RED Dashboard: <http://localhost:1880/ui>
+   - PostgreSQL: <http://localhost:5432>
    - InfluxDB: <http://localhost:8086>
 
 ## 📋 Service Overview
