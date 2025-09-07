@@ -11,7 +11,7 @@
     "type": "ui_dropdown",
     "z": "7662828b17b20464",
     "name": "Select Plant",
-    "label": "Plant Name",
+    "label": "Plant ID",
     "tooltip": "",
     "group": "e7b0222f.8339",
     "order": 1,
@@ -20,7 +20,7 @@
     "passthru": true,
     "multiple": false,
     "size": 1,
-    "topic": "plantName",
+    "topic": "plantId",
     "topicType": "msg",
     "payloadType": "flow",
     "className": "",
@@ -29,7 +29,44 @@
     "y": 140,
     "wires": [
       [
-        "61b4020a.e14b1c"
+        "a918a24c.731e88",
+        "a918a24c.731e89",
+        "a918a24c.731e90"
+      ]
+    ]
+  },
+  {
+    "id": "61b4020a.e14b1c",
+    "type": "influxdb in",
+    "z": "7662828b17b20464",
+    "name": "Get Plant IDs",
+    "influxdb": "ed83a79d.f676b",
+    "query": "import \"influxdata/influxdb/schema\"\n\nschema.tagValues(bucket: \"sensor_data\", tag: \"plant_id\")",
+    "precision": "",
+    "x": 360,
+    "y": 60,
+    "wires": [
+      [
+        "c9826d52.92388"
+      ]
+    ]
+  },
+  {
+    "id": "c9826d52.92388",
+    "type": "function",
+    "z": "7662828b17b20464",
+    "name": "Format for Dropdown",
+    "func": "if (!msg.payload || !Array.isArray(msg.payload)) {\n    return null;\n}\n\nconst plantIds = msg.payload.map(row => row._value);\nmsg.payload = plantIds.map(id => ({ label: id, value: id }));\nreturn msg;",
+    "outputs": 1,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 580,
+    "y": 60,
+    "wires": [
+      [
+        "e221376e.51a378"
       ]
     ]
   },
@@ -37,15 +74,15 @@
     "id": "a918a24c.731e88",
     "type": "function",
     "z": "7662828b17b20464",
-    "name": "Prepare Flux Query",
-    "func": "const plantName = msg.payload;\n\nif (!plantName) {\n    // If no plant is selected, do nothing\n    return null;\n}\n\n// Query for the latest data from the selected plant\nconst fluxQuery = `\nfrom(bucket: \"sensor_data\")\n  |> range(start: -24h)\n  |> filter(fn: (r) => r._measurement == \"plant_thresholds\" and r.plant_name == \"${plantName}\")\n  |> last()\n`;\n\nmsg.query = fluxQuery;\n\nreturn msg;\n",
+    "name": "Prepare Sensor Query",
+    "func": "const plantId = msg.payload;\n\nif (!plantId) {\n    return null;\n}\n\nconst fluxQuery = `\nfrom(bucket: \"sensor_data\")\n  |> range(start: -24h)\n  |> filter(fn: (r) => r._measurement == \"sensor_readings\" and r.plant_id == \"${plantId}\")\n  |> last()\n`;\n\nmsg.query = fluxQuery;\nreturn msg;",
     "outputs": 1,
     "noerr": 0,
     "initialize": "",
     "finalize": "",
     "libs": [],
     "x": 370,
-    "y": 140,
+    "y": 200,
     "wires": [
       [
         "b1b4020a.e14b1d"
@@ -56,12 +93,12 @@
     "id": "b1b4020a.e14b1d",
     "type": "influxdb in",
     "z": "7662828b17b20464",
-    "name": "Read Plant Data",
+    "name": "Read Sensor Data",
     "influxdb": "ed83a79d.f676b",
     "query": "",
     "precision": "",
     "x": 570,
-    "y": 140,
+    "y": 200,
     "wires": [
       [
         "67d3d752.61066"
@@ -72,15 +109,15 @@
     "id": "67d3d752.61066",
     "type": "function",
     "z": "7662828b17b20464",
-    "name": "Format for Gauges",
-    "func": "const result = msg.payload[0];\n\nif (!result) {\n    // If no data, return a message to reset the gauges\n    return null;\n}\n\n// Prepare payloads for each gauge node\nconst tempMsg = { payload: result.temperature_max, topic: 'Temperature Max (°C)' };\nconst humidityMsg = { payload: result.humidity_max, topic: 'Humidity Max (%)' };\nconst soilMsg = { payload: result.soil_moisture_max, topic: 'Soil Moisture Max (val)' };\n\n// You can also send min values to other gauges\nconst tempMinMsg = { payload: result.temperature_min, topic: 'Temperature Min (°C)' };\nconst humidityMinMsg = { payload: result.humidity_min, topic: 'Humidity Min (%)' };\nconst soilMinMsg = { payload: result.soil_moisture_min, topic: 'Soil Moisture Min (val)' };\n\nreturn [tempMsg, humidityMsg, soilMsg, tempMinMsg, humidityMinMsg, soilMinMsg];\n",
-    "outputs": 6,
+    "name": "Format Sensor Gauges",
+    "func": "const result = msg.payload[0];\n\nif (!result) {\n    return null;\n}\n\nconst tempMsg = { payload: result.temperature, topic: 'Temperature (°C)' };\nconst humidityMsg = { payload: result.humidity, topic: 'Humidity (%)' };\nconst soilMsg = { payload: result.soil_moisture, topic: 'Soil Moisture (val)' };\nconst phMsg = { payload: result.ph_level, topic: 'pH Level' };\n\nreturn [tempMsg, humidityMsg, soilMsg, phMsg];",
+    "outputs": 4,
     "noerr": 0,
     "initialize": "",
     "finalize": "",
     "libs": [],
     "x": 750,
-    "y": 140,
+    "y": 200,
     "wires": [
       [
         "d9994c92.176f5"
@@ -91,22 +128,22 @@
       [
         "2b20f922.38d77c"
       ],
-      [],
-      [],
-      []
+      [
+        "d9994c92.176f6"
+      ]
     ]
   },
   {
     "id": "d9994c92.176f5",
     "type": "ui_gauge",
     "z": "7662828b17b20464",
-    "name": "Temperature Max",
+    "name": "Temperature",
     "group": "e7b0222f.8339",
     "order": 2,
     "width": 4,
     "height": 3,
     "gtype": "gage",
-    "title": "Temperature Max",
+    "title": "Temperature",
     "label": "°C",
     "format": "{{value}}",
     "min": 0,
@@ -119,20 +156,20 @@
     "seg1": "20",
     "seg2": "35",
     "x": 980,
-    "y": 60,
+    "y": 140,
     "wires": []
   },
   {
     "id": "f9b76c8c.552d7",
     "type": "ui_gauge",
     "z": "7662828b17b20464",
-    "name": "Humidity Max",
+    "name": "Humidity",
     "group": "e7b0222f.8339",
     "order": 3,
     "width": 4,
     "height": 3,
     "gtype": "gage",
-    "title": "Humidity Max",
+    "title": "Humidity",
     "label": "%",
     "format": "{{value}}",
     "min": 0,
@@ -145,20 +182,20 @@
     "seg1": "30",
     "seg2": "70",
     "x": 980,
-    "y": 120,
+    "y": 200,
     "wires": []
   },
   {
     "id": "2b20f922.38d77c",
     "type": "ui_gauge",
     "z": "7662828b17b20464",
-    "name": "Soil Moisture Max",
+    "name": "Soil Moisture",
     "group": "e7b0222f.8339",
     "order": 4,
     "width": 4,
     "height": 3,
     "gtype": "gage",
-    "title": "Soil Moisture Max",
+    "title": "Soil Moisture",
     "label": "val",
     "format": "{{value}}",
     "min": 0,
@@ -171,15 +208,225 @@
     "seg1": "300",
     "seg2": "700",
     "x": 990,
-    "y": 180,
+    "y": 260,
+    "wires": []
+  },
+  {
+    "id": "d9994c92.176f6",
+    "type": "ui_gauge",
+    "z": "7662828b17b20464",
+    "name": "pH Level",
+    "group": "e7b0222f.8339",
+    "order": 5,
+    "width": 4,
+    "height": 3,
+    "gtype": "gage",
+    "title": "pH Level",
+    "label": "pH",
+    "format": "{{value}}",
+    "min": 0,
+    "max": 14,
+    "colors": [
+      "#ca3838",
+      "#e6e600",
+      "#00b500"
+    ],
+    "seg1": "6.0",
+    "seg2": "7.5",
+    "x": 980,
+    "y": 320,
+    "wires": []
+  },
+  {
+    "id": "a918a24c.731e89",
+    "type": "function",
+    "z": "7662828b17b20464",
+    "name": "Prepare Actuator Query",
+    "func": "const plantId = msg.payload;\n\nif (!plantId) {\n    return null;\n}\n\nconst fluxQuery = `\nfrom(bucket: \"sensor_data\")\n  |> range(start: -24h)\n  |> filter(fn: (r) => r._measurement == \"actuator_events\" and r.plant_id == \"${plantId}\")\n  |> sort(columns: [\"_time\"], desc: true)\n  |> limit(n: 10)\n  |> rename(columns: {_time: \"timestamp\", action: \"Action\", success: \"Success\"})\n`;\n\nmsg.query = fluxQuery;\nreturn msg;",
+    "outputs": 1,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 370,
+    "y": 400,
+    "wires": [
+      [
+        "b1b4020a.e14b1e"
+      ]
+    ]
+  },
+  {
+    "id": "b1b4020a.e14b1e",
+    "type": "influxdb in",
+    "z": "7662828b17b20464",
+    "name": "Read Actuator Data",
+    "influxdb": "ed83a79d.f676b",
+    "query": "",
+    "precision": "",
+    "x": 570,
+    "y": 400,
+    "wires": [
+      [
+        "67d3d752.61067",
+        "d9994c92.176f7",
+        "f9b76c8c.552d8"
+      ]
+    ]
+  },
+  {
+    "id": "67d3d752.61067",
+    "type": "function",
+    "z": "7662828b17b20464",
+    "name": "Format Actuator Table",
+    "func": "const rows = msg.payload.map(row => {\n    const timestamp = new Date(row.timestamp);\n    return { \n        timestamp: timestamp.toLocaleString(),\n        Action: row.Action,\n        Success: row.Success\n    };\n});\n\nmsg.payload = rows;\nreturn msg;\n",
+    "outputs": 1,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 750,
+    "y": 400,
+    "wires": [
+      [
+        "d9994c92.176f7"
+      ]
+    ]
+  },
+  {
+    "id": "d9994c92.176f7",
+    "type": "ui_table",
+    "z": "7662828b17b20464",
+    "name": "Actuator Events History",
+    "group": "e7b0222f.833a",
+    "order": 1,
+    "width": 12,
+    "height": 5,
+    "columns": [
+      { "title": "Timestamp", "field": "timestamp", "width": "30%" },
+      { "title": "Action", "field": "Action", "width": "40%" },
+      { "title": "Success", "field": "Success", "width": "30%" }
+    ],
+    "x": 980,
+    "y": 400,
+    "wires": []
+  },
+  {
+    "id": "f9b76c8c.552d8",
+    "type": "ui_text",
+    "z": "7662828b17b20464",
+    "name": "Last Action Status",
+    "group": "e7b0222f.833a",
+    "order": 2,
+    "width": 6,
+    "height": 1,
+    "label": "Last Action Status",
+    "format": "{{payload[0].Success ? 'Successful' : 'Failed'}}",
+    "layout": "row-spread",
+    "className": "",
+    "x": 980,
+    "y": 440,
+    "wires": []
+  },
+  {
+    "id": "a918a24c.731e90",
+    "type": "function",
+    "z": "7662828b17b20464",
+    "name": "Prepare Alerts Query",
+    "func": "const plantId = msg.payload;\n\nif (!plantId) {\n    return null;\n}\n\nconst fluxQuery = `\nfrom(bucket: \"sensor_data\")\n  |> range(start: -24h)\n  |> filter(fn: (r) => r._measurement == \"alerts\" and r.plant_id == \"${plantId}\")\n  |> sort(columns: [\"_time\"], desc: true)\n  |> limit(n: 10)\n  |> rename(columns: {_time: \"timestamp\", alert_type: \"AlertType\", severity: \"Severity\", message: \"Message\"})\n`;\n\nmsg.query = fluxQuery;\nreturn msg;",
+    "outputs": 1,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 370,
+    "y": 500,
+    "wires": [
+      [
+        "b1b4020a.e14b1f"
+      ]
+    ]
+  },
+  {
+    "id": "b1b4020a.e14b1f",
+    "type": "influxdb in",
+    "z": "7662828b17b20464",
+    "name": "Read Alerts Data",
+    "influxdb": "ed83a79d.f676b",
+    "query": "",
+    "precision": "",
+    "x": 570,
+    "y": 500,
+    "wires": [
+      [
+        "67d3d752.61068"
+      ]
+    ]
+  },
+  {
+    "id": "67d3d752.61068",
+    "type": "function",
+    "z": "7662828b17b20464",
+    "name": "Format Alerts Table",
+    "func": "const rows = msg.payload.map(row => {\n    const timestamp = new Date(row.timestamp);\n    return { \n        timestamp: timestamp.toLocaleString(),\n        AlertType: row.AlertType,\n        Severity: row.Severity,\n        Message: row.Message\n    };\n});\n\nmsg.payload = rows;\nreturn msg;\n",
+    "outputs": 1,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 750,
+    "y": 500,
+    "wires": [
+      [
+        "d9994c92.176f8"
+      ]
+    ]
+  },
+  {
+    "id": "d9994c92.176f8",
+    "type": "ui_table",
+    "z": "7662828b17b20464",
+    "name": "Alerts History",
+    "group": "e7b0222f.833b",
+    "order": 1,
+    "width": 12,
+    "height": 5,
+    "columns": [
+      { "title": "Timestamp", "field": "timestamp", "width": "20%" },
+      { "title": "Alert Type", "field": "AlertType", "width": "20%" },
+      { "title": "Severity", "field": "Severity", "width": "20%" },
+      { "title": "Message", "field": "Message", "width": "40%" }
+    ],
+    "x": 980,
+    "y": 500,
     "wires": []
   },
   {
     "id": "e7b0222f.8339",
     "type": "ui_group",
-    "name": "Plant Details",
+    "name": "Sensor Data",
     "tab": "1537e28b.75f6e8",
     "order": 1,
+    "disp": true,
+    "width": "12",
+    "collapse": false
+  },
+  {
+    "id": "e7b0222f.833a",
+    "type": "ui_group",
+    "name": "Actuator Events",
+    "tab": "1537e28b.75f6e8",
+    "order": 2,
+    "disp": true,
+    "width": "12",
+    "collapse": false
+  },
+  {
+    "id": "e7b0222f.833b",
+    "type": "ui_group",
+    "name": "Alerts",
+    "tab": "1537e28b.75f6e8",
+    "order": 3,
     "disp": true,
     "width": "12",
     "collapse": false
@@ -205,40 +452,5 @@
     "order": 1,
     "disabled": false,
     "hidden": false
-  },
-  {
-    "id": "61b4020a.e14b1c",
-    "type": "influxdb in",
-    "z": "7662828b17b20464",
-    "name": "Get Plant Names",
-    "influxdb": "ed83a79d.f676b",
-    "query": "import \"influxdata/influxdb/schema\"\n\nschema.tagValues(bucket: \"sensor_data\", tag: \"plant_name\")",
-    "precision": "",
-    "x": 360,
-    "y": 60,
-    "wires": [
-      [
-        "c9826d52.92388"
-      ]
-    ]
-  },
-  {
-    "id": "c9826d52.92388",
-    "type": "function",
-    "z": "7662828b17b20464",
-    "name": "Format for Dropdown",
-    "func": "if (!msg.payload || !Array.isArray(msg.payload)) {\n    return null;\n}\n\n// Get unique plant names from query result\nconst plantNames = msg.payload.map(row => row._value);\n\n// Format the list for the dropdown node\nmsg.payload = plantNames.map(name => ({ label: name, value: name }));\n\nreturn msg;\n",
-    "outputs": 1,
-    "noerr": 0,
-    "initialize": "",
-    "finalize": "",
-    "libs": [],
-    "x": 580,
-    "y": 60,
-    "wires": [
-      [
-        "e221376e.51a378"
-      ]
-    ]
   }
 ]
