@@ -6,7 +6,7 @@ import json
 from datetime import datetime
 from .postgres import execute_query, test_connection
 from .influxdb import test_connection as test_influx_connection
-from .schema import POSTGRES_SCHEMA, POSTGRES_INDEXES, SAMPLE_DATA
+from .schema import POSTGRES_SCHEMA, POSTGRES_INDEXES, SAMPLE_DATA, DEFAULT_PLANT_CATALOG
 
 logger = logging.getLogger(__name__)
 
@@ -15,6 +15,13 @@ def create_postgres_schema():
     try:
         logger.info("Creating PostgreSQL schema...")
         
+        # Ensure pgcrypto is available for gen_random_uuid()
+        try:
+            execute_query('CREATE EXTENSION IF NOT EXISTS "pgcrypto";')
+            logger.info('Ensured pgcrypto extension is enabled')
+        except Exception as e:
+            logger.warning(f"Could not create pgcrypto extension (may already exist or insufficient perms): {e}")
+
         # Create tables
         for table_name, create_sql in POSTGRES_SCHEMA.items():
             logger.info(f"Creating table: {table_name}")
@@ -55,8 +62,10 @@ def seed_postgres_data():
             if not user_result or len(user_result) == 0:
                 logger.warning(f"User with telegram_id {plant_data['user_telegram_id']} not found, skipping plant")
                 continue
-                
-            user_id = user_result[0][0]  # First row, first column (id)
+            
+            # execute_query returns list of RealDictRow; extract by key
+            first_row = user_result[0]
+            user_id = first_row['id'] if isinstance(first_row, dict) else first_row[0]
             
             query = """
                 INSERT INTO plants (name, species, location, user_id, thresholds, care_info)
@@ -91,6 +100,44 @@ def seed_postgres_data():
         logger.error(f"Failed to seed PostgreSQL data: {e}")
         return False
 
+def seed_default_plant_catalogue():
+    """Seed default plant catalogue entries as unassigned plants (once)."""
+    try:
+        logger.info("Seeding default plant catalogue...")
+
+        for item in DEFAULT_PLANT_CATALOG:
+            name = item.get('display_name') or item.get('species')
+            species = item.get('species')
+            thresholds = json.dumps(item.get('default_thresholds', {}))
+            care_info = json.dumps(item.get('care_info', {}))
+
+            # Avoid duplicates: check if a plant with same name and species exists
+            exists = execute_query(
+                """
+                SELECT 1 FROM plants 
+                WHERE name = %s AND species = %s AND active = TRUE
+                LIMIT 1
+                """,
+                (name, species)
+            )
+
+            if exists:
+                continue
+
+            execute_query(
+                """
+                INSERT INTO plants (name, species, location, thresholds, care_info)
+                VALUES (%s, %s, %s, %s, %s)
+                """,
+                (name, species, None, thresholds, care_info)
+            )
+
+        logger.info("Default plant catalogue seeded successfully")
+        return True
+    except Exception as e:
+        logger.error(f"Failed to seed default plant catalogue: {e}")
+        return False
+
 def create_influxdb_buckets():
     """Create InfluxDB buckets and retention policies"""
     try:
@@ -115,9 +162,12 @@ def run_migrations():
         logger.error("PostgreSQL connection failed")
         return False
     
-    if not test_influx_connection():
-        logger.error("InfluxDB connection failed")
-        return False
+    # InfluxDB is optional for Postgres migrations; continue even if it fails
+    try:
+        if not test_influx_connection():
+            logger.warning("InfluxDB connection failed; proceeding with PostgreSQL migrations only")
+    except Exception as e:
+        logger.warning(f"InfluxDB check errored; proceeding anyway: {e}")
     
     # Create PostgreSQL schema
     if not create_postgres_schema():
@@ -128,11 +178,19 @@ def run_migrations():
     if not seed_postgres_data():
         logger.error("PostgreSQL data seeding failed")
         return False
+
+    # Seed default plant catalogue
+    if not seed_default_plant_catalogue():
+        logger.error("Default plant catalogue seeding failed")
+        return False
     
     # Setup InfluxDB
-    if not create_influxdb_buckets():
-        logger.error("InfluxDB setup failed")
-        return False
+    # Do not fail the whole migration if InfluxDB setup fails
+    try:
+        if not create_influxdb_buckets():
+            logger.warning("InfluxDB setup failed; continuing")
+    except Exception as e:
+        logger.warning(f"InfluxDB setup errored; continuing: {e}")
     
     logger.info("All database migrations completed successfully")
     return True

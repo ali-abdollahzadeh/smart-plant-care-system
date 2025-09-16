@@ -31,15 +31,15 @@ def wait_for_databases():
             # Test InfluxDB
             influx_ok = test_influx_connection()
             
-            if postgres_ok and influx_ok:
-                logger.info("All databases are ready!")
+            # Proceed as soon as PostgreSQL is ready; InfluxDB can be configured later
+            if postgres_ok:
+                if not influx_ok:
+                    logger.warning("InfluxDB not ready or unauthorized; proceeding with Postgres-ready state")
+                logger.info("Databases readiness condition satisfied (Postgres ready)")
                 return True
             else:
                 logger.info(f"Database check attempt {attempt + 1}/{max_attempts}")
-                if not postgres_ok:
-                    logger.warning("PostgreSQL not ready yet")
-                if not influx_ok:
-                    logger.warning("InfluxDB not ready yet")
+                logger.warning("PostgreSQL not ready yet")
                     
         except Exception as e:
             logger.warning(f"Database check failed (attempt {attempt + 1}): {e}")
@@ -69,7 +69,9 @@ def run_setup():
     logger.info("Checking final database status...")
     status = check_database_status()
     
-    if status['postgres'] and status['influxdb']:
+    if status['postgres']:
+        if not status['influxdb']:
+            logger.warning("InfluxDB not ready or unauthorized; proceeding with successful Postgres initialization")
         logger.info("Database initialization completed successfully!")
         
         # Get database info

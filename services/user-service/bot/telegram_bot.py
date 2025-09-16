@@ -10,16 +10,22 @@ import time
 import db
 from telegram.error import BadRequest
 from db import add_user, get_user_by_telegram_id, get_plants_for_user, get_all_plants, assign_plant_to_user, update_user, execute_query
+import paho.mqtt.client as mqtt
+import json
 
 CONFIG_PATH = os.environ.get("CONFIG_PATH", "config.yaml")
 with open(CONFIG_PATH, 'r') as f:
     config = yaml.safe_load(f)
 
 bot_token = config['telegram']['bot_token']
-rest_api_url = os.environ.get('REST_API_URL', 'http://sensor-data-service:5004/data')
+rest_api_url = os.environ.get('REST_API_URL', 'http://sensor-data-service:5004/data/latest')
 SENSOR_API_URL = os.environ.get('SENSOR_API_URL', 'http://sensor-service:5002/actuator')
 CATALOGUE_API_URL = os.environ.get('CATALOGUE_API_URL', 'http://catalogue-service:5000')
 USER_SERVICE_PORT = int(os.environ.get("USER_SERVICE_PORT", "5600"))
+
+# MQTT configuration
+MQTT_BROKER = config['mqtt']['broker_url']
+MQTT_PORT = config['mqtt']['port']
 
 
 # Helper: get or create user in catalogue for a Telegram chat_id
@@ -122,6 +128,9 @@ app = Flask(__name__)
 
 # Mapping: telegram_user_id -> plant_id
 user_plant_assignments = {}
+
+# MQTT client for assignment notifications
+mqtt_client = None
 # Mapping: (telegram_user_id, plant_id) -> last_data
 last_sent_data = {}
 
@@ -144,16 +153,34 @@ def fetch_latest_flat_readings(plant_id, timeout=5):
 
         payload = resp.json()
         data_list = payload.get("data", []) if isinstance(payload, dict) else []
+
+        if not data_list:
+            return {}
+
+        # Handle pivoted format from /data/latest: dict with direct fields
+        if isinstance(data_list[0], dict) and (
+            'temperature' in data_list[0] or 'humidity' in data_list[0] or 'soil_moisture' in data_list[0]
+        ):
+            row = data_list[0]
+            return {
+                'temperature': row.get('temperature'),
+                'humidity': row.get('humidity'),
+                'soil_moisture': row.get('soil_moisture'),
+                'lighting': row.get('lighting'),
+                'watering': row.get('watering')
+            }
+
+        # Handle field/value/time format (fallback)
         latest = {}
         for row in data_list:
-            f = row.get("field")
-            t = row.get("time")
-            v = row.get("value")
+            f = row.get('field')
+            t = row.get('time')
+            v = row.get('value')
             if not f:
                 continue
-            if f not in latest or (t and t > latest[f].get("time", "")):
-                latest[f] = {"value": v, "time": t}
-        flat = {k: v["value"] for k, v in latest.items()}
+            if f not in latest or (t and t > latest[f].get('time', '')):
+                latest[f] = {'value': v, 'time': t}
+        flat = {k: v['value'] for k, v in latest.items()}
         return flat
     except Exception as e:
         logging.error(f"[SENSOR] fetch_latest_flat_readings error for {plant_id}: {e}")
@@ -166,14 +193,40 @@ tg_app = ApplicationBuilder().token(bot_token).build()
 # Function to poll data and push updates
 def poll_and_push_sensor_data():
     logging.info("[NOTIFY] poll_and_push_sensor_data thread started")
+    last_assignments_snapshot = {}
     while True:
+        # Periodically refresh assignments from catalogue
+        try:
+            prev = dict(user_plant_assignments)
+            load_user_plant_assignments()
+            # Detect new assignments and notify once
+            for tg_id, plant_id in user_plant_assignments.items():
+                if tg_id not in prev or prev.get(tg_id) != plant_id:
+                    try:
+                        import asyncio
+                        plant, _ = get_plant_detail(plant_id)
+                        plant_name = plant.get('name', plant_id)
+                        asyncio.run(tg_app.bot.send_message(chat_id=tg_id, text=f"🌱 You have been assigned: {plant_name}"))
+                    except Exception as e:
+                        logging.error(f"[NOTIFY] Failed to send assignment message to {tg_id}: {e}")
+            last_assignments_snapshot = dict(user_plant_assignments)
+        except Exception as e:
+            logging.error(f"[NOTIFY] Failed refreshing assignments: {e}")
+
         logging.info(f"[NOTIFY] user_plant_assignments: {user_plant_assignments}")
         for telegram_user_id, plant_id in list(user_plant_assignments.items()):
             try:
                 resp = requests.get(f"{rest_api_url}", params={"plant_id": plant_id}, timeout=5)
                 if resp.status_code == 200:
                     payload = resp.json()
-                    data = payload.get('data')[0] if isinstance(payload, dict) and payload.get('data') else {}
+                    # Support pivoted format
+                    data = {}
+                    if isinstance(payload, dict) and payload.get('data'):
+                        first = payload['data'][0]
+                        if isinstance(first, dict) and ('temperature' in first or 'humidity' in first):
+                            data = first
+                        else:
+                            data = first if isinstance(first, dict) else {}
                     key = (telegram_user_id, plant_id)
                     # --- Status change notification logic ---
                     plant, _ = get_plant_detail(plant_id)
@@ -205,7 +258,12 @@ def poll_and_push_sensor_data():
                                     logging.error(f"[NOTIFY] Failed to send OK to user {telegram_user_id}: {e}")
                     # --- End status change notification logic ---
                     # Always send sensor data every 10 seconds
-                    text = f"🌱 Plant {plant_id} update:\n" + "\n".join(f"{k}: {v}" for k, v in data.items())
+                    text = (
+                        f"🌱 Plant {plant_id} update:\n"
+                        f"🌡️ Temp: {data.get('temperature', '-')}\n"
+                        f"💧 Humidity: {data.get('humidity', '-')}\n"
+                        f"🌱 Soil: {data.get('soil_moisture', '-')}\n"
+                    )
                     try:
                         logging.info(f"[NOTIFY] About to send SENSOR DATA to user {telegram_user_id} for plant {plant_id}")
                         import asyncio
@@ -254,6 +312,62 @@ def load_user_plant_assignments():
 
     except Exception as e:
         logging.error(f"[NOTIFY] Error loading user plant assignments: {e}")
+
+def on_mqtt_connect(client, userdata, flags, rc):
+    """MQTT connection callback"""
+    if rc == 0:
+        logging.info("Connected to MQTT broker")
+        client.subscribe("plant/assignments")
+        logging.info("Subscribed to plant/assignments topic")
+    else:
+        logging.error(f"Failed to connect to MQTT broker: {rc}")
+
+def on_mqtt_message(client, userdata, msg):
+    """MQTT message callback for assignment notifications"""
+    try:
+        data = json.loads(msg.payload.decode())
+        if data.get("type") == "plant_assigned":
+            plant_id = data.get("plant_id")
+            telegram_id = data.get("telegram_id")
+            plant_name = data.get("plant_name")
+            
+            if telegram_id and plant_name:
+                # Send assignment notification
+                asyncio.run(send_assignment_notification(telegram_id, plant_name, plant_id))
+                logging.info(f"Sent assignment notification to {telegram_id} for plant {plant_name}")
+    except Exception as e:
+        logging.error(f"Error processing MQTT assignment message: {e}")
+
+async def send_assignment_notification(telegram_id, plant_name, plant_id):
+    """Send plant assignment notification via Telegram"""
+    try:
+        message = f"🌱 **Plant Assigned!**\n\n"
+        message += f"**Plant:** {plant_name}\n"
+        message += f"**Plant ID:** `{plant_id}`\n\n"
+        message += "Use /plants to view your plants and /status to check sensor data!"
+        
+        await tg_app.bot.send_message(
+            chat_id=telegram_id,
+            text=message,
+            parse_mode='Markdown'
+        )
+    except Exception as e:
+        logging.error(f"Failed to send assignment notification to {telegram_id}: {e}")
+
+def start_mqtt_subscriber():
+    """Start MQTT subscriber for assignment notifications"""
+    global mqtt_client
+    try:
+        mqtt_client = mqtt.Client()
+        mqtt_client.on_connect = on_mqtt_connect
+        mqtt_client.on_message = on_mqtt_message
+        
+        mqtt_client.connect(MQTT_BROKER, MQTT_PORT, 60)
+        mqtt_client.loop_forever()
+    except Exception as e:
+        logging.error(f"MQTT subscriber error: {e}")
+        time.sleep(5)
+        start_mqtt_subscriber()  # Retry
 
 # Sync assignments from catalogue-service to local DB
 def sync_assignments_from_catalogue():
@@ -494,6 +608,8 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "• /plants - View your assigned plants\n"
         "• /status - Get latest plant data\n"
         "• /report - Get weekly plant health report\n"
+        "• /available - View available plants to assign\n"
+        "• /assign - Assign a plant to yourself\n"
         "• /help - Show this help message\n\n"
         "🎯 <b>How to use:</b>\n"
         "1. Use /start to register with the system\n"
@@ -520,6 +636,98 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=False)
     
     await update.message.reply_text(help_message, reply_markup=reply_markup, parse_mode='HTML')
+
+async def available_plants_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Show available plants that can be assigned"""
+    try:
+        # Get all plants from catalogue
+        resp = requests.get(f"{CATALOGUE_API_URL}/plants", timeout=5)
+        if resp.status_code != 200:
+            await update.message.reply_text("❌ Failed to fetch available plants")
+            return
+        
+        plants = resp.json()
+        available_plants = [p for p in plants if not p.get('user_id')]  # Unassigned plants
+        
+        if not available_plants:
+            await update.message.reply_text("🌱 No available plants to assign right now.")
+            return
+        
+        message = "🌱 **Available Plants to Assign:**\n\n"
+        keyboard = []
+        
+        for plant in available_plants[:10]:  # Limit to 10 plants
+            plant_id = plant['id']
+            plant_name = plant.get('name', 'Unnamed Plant')
+            species = plant.get('species', 'Unknown Species')
+            
+            message += f"**{plant_name}** ({species})\n"
+            message += f"ID: `{plant_id}`\n\n"
+            
+            keyboard.append([InlineKeyboardButton(
+                f"Assign {plant_name}",
+                callback_data=f"assign_{plant_id}"
+            )])
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.message.reply_text(
+            message,
+            parse_mode='Markdown',
+            reply_markup=reply_markup
+        )
+        
+    except Exception as e:
+        logging.error(f"Error in available_plants_command: {e}")
+        await update.message.reply_text("❌ Error fetching available plants")
+
+async def assign_plant_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Assign a plant to the current user"""
+    try:
+        chat_id = update.effective_chat.id
+        user_id = get_or_create_user(chat_id, update.effective_user.username)
+        
+        if not user_id:
+            await update.message.reply_text("❌ Failed to get or create user")
+            return
+        
+        # Get available plants
+        resp = requests.get(f"{CATALOGUE_API_URL}/plants", timeout=5)
+        if resp.status_code != 200:
+            await update.message.reply_text("❌ Failed to fetch plants")
+            return
+        
+        plants = resp.json()
+        available_plants = [p for p in plants if not p.get('user_id')]
+        
+        if not available_plants:
+            await update.message.reply_text("🌱 No available plants to assign right now.")
+            return
+        
+        # Show first available plant for assignment
+        plant = available_plants[0]
+        plant_id = plant['id']
+        plant_name = plant.get('name', 'Unnamed Plant')
+        
+        # Assign the plant
+        assign_resp = requests.post(f"{CATALOGUE_API_URL}/user_plants", json={
+            'user_id': user_id,
+            'plant_id': plant_id
+        }, timeout=5)
+        
+        if assign_resp.status_code == 201:
+            await update.message.reply_text(
+                f"✅ **Plant Assigned!**\n\n"
+                f"**Plant:** {plant_name}\n"
+                f"**Plant ID:** `{plant_id}`\n\n"
+                f"Use /plants to view your plants!",
+                parse_mode='Markdown'
+            )
+        else:
+            await update.message.reply_text(f"❌ Failed to assign plant: {assign_resp.text}")
+            
+    except Exception as e:
+        logging.error(f"Error in assign_plant_command: {e}")
+        await update.message.reply_text("❌ Error assigning plant")
 
 async def report_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Command to show weekly plant health report"""
@@ -867,11 +1075,53 @@ async def handle_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 return
         except Exception as e:
             logging.error(f"Exception sending actuator POST: {e}")
-            await query.edit_message_text(f"Failed to water plant: {e}")
-            return
-        # Only update the plant detail (no extra confirmation message)
-        await show_plant_detail(update, context, plant_id)
+        await query.edit_message_text(f"Failed to water plant: {e}")
         return
+    # Only update the plant detail (no extra confirmation message)
+    await show_plant_detail(update, context, plant_id)
+    return
+
+async def handle_assign_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle plant assignment callback buttons"""
+    query = update.callback_query
+    await query.answer()
+    
+    try:
+        plant_id = query.data.replace("assign_", "")
+        chat_id = update.effective_chat.id
+        user_id = get_or_create_user(chat_id, update.effective_user.username)
+        
+        if not user_id:
+            await query.edit_message_text("❌ Failed to get or create user")
+            return
+        
+        # Assign the plant
+        assign_resp = requests.post(f"{CATALOGUE_API_URL}/user_plants", json={
+            'user_id': user_id,
+            'plant_id': plant_id
+        }, timeout=5)
+        
+        if assign_resp.status_code == 201:
+            # Get plant details for confirmation
+            plant_resp = requests.get(f"{CATALOGUE_API_URL}/plants/{plant_id}", timeout=5)
+            plant_name = "Unknown Plant"
+            if plant_resp.status_code == 200:
+                plant_data = plant_resp.json()
+                plant_name = plant_data.get('name', 'Unknown Plant')
+            
+            await query.edit_message_text(
+                f"✅ **Plant Assigned!**\n\n"
+                f"**Plant:** {plant_name}\n"
+                f"**Plant ID:** `{plant_id}`\n\n"
+                f"Use /plants to view your plants!",
+                parse_mode='Markdown'
+            )
+        else:
+            await query.edit_message_text(f"❌ Failed to assign plant: {assign_resp.text}")
+            
+    except Exception as e:
+        logging.error(f"Error in handle_assign_callback: {e}")
+        await query.edit_message_text("❌ Error assigning plant")
 
 def start_bot():
     import asyncio
@@ -898,9 +1148,12 @@ def start_bot():
     tg_app.add_handler(CommandHandler("status", status_command))
     tg_app.add_handler(CommandHandler("report", report_command))
     tg_app.add_handler(CommandHandler("help", help_command))
+    tg_app.add_handler(CommandHandler("available", available_plants_command))
+    tg_app.add_handler(CommandHandler("assign", assign_plant_command))
     tg_app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_text_message))
     tg_app.add_handler(CallbackQueryHandler(handle_plant_select, pattern="^plant_"))
     tg_app.add_handler(CallbackQueryHandler(handle_action, pattern="^(toggle_light_|water_|back_to_grid)"))
+    tg_app.add_handler(CallbackQueryHandler(handle_assign_callback, pattern="^assign_"))
 
     tg_app.run_polling(
         drop_pending_updates=True,
@@ -926,6 +1179,7 @@ if __name__ == "__main__":
         threading.Thread(target=start_bot, daemon=True).start()
 
     threading.Thread(target=poll_and_push_sensor_data, daemon=True).start()
+    threading.Thread(target=start_mqtt_subscriber, daemon=True).start()
 
     app.run(host='0.0.0.0', port=USER_SERVICE_PORT, debug=False, use_reloader=False)
 

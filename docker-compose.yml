@@ -34,6 +34,7 @@ services:
       - DOCKER_INFLUXDB_INIT_PASSWORD=password123
       - DOCKER_INFLUXDB_INIT_ORG=smart_plant_care
       - DOCKER_INFLUXDB_INIT_BUCKET=sensor_data
+      - DOCKER_INFLUXDB_INIT_ADMIN_TOKEN=dev-influx-token-123
     volumes:
       - influxdb_data:/var/lib/influxdb2
     restart: unless-stopped
@@ -75,6 +76,7 @@ services:
       - INFLUXDB_PASSWORD=password123
       - INFLUXDB_ORG=smart_plant_care
       - INFLUXDB_BUCKET=sensor_data
+      - INFLUXDB_TOKEN=dev-influx-token-123
       - POSTGRES_URL=postgresql://plant_user:password123@postgres:5432/smart_plant_care
     restart: unless-stopped
     depends_on:
@@ -94,6 +96,10 @@ services:
     environment:
       - CONFIG_PATH=/app/config.yaml
       - POSTGRES_URL=postgresql://plant_user:password123@postgres:5432/smart_plant_care
+      - INFLUXDB_URL=http://influxdb:8086
+      - INFLUXDB_TOKEN=dev-influx-token-123
+      - INFLUXDB_ORG=smart_plant_care
+      - INFLUXDB_BUCKET=sensor_data
     restart: unless-stopped
     depends_on:
       - database-init
@@ -126,6 +132,7 @@ services:
       - INFLUXDB_PASSWORD=password123
       - INFLUXDB_ORG=smart_plant_care
       - INFLUXDB_BUCKET=sensor_data
+      - INFLUXDB_TOKEN=dev-influx-token-123
     restart: "no"
     depends_on:
       - postgres
@@ -145,6 +152,7 @@ services:
       - INFLUXDB_PASSWORD=password123
       - INFLUXDB_ORG=smart_plant_care
       - INFLUXDB_BUCKET=sensor_data
+      - INFLUXDB_TOKEN=dev-influx-token-123
       - CATALOGUE_URL=http://catalogue-service:5000
       - POSTGRES_URL=postgresql://plant_user:password123@postgres:5432/smart_plant_care
     restart: unless-stopped
@@ -170,6 +178,10 @@ services:
       - SENSOR_API_URL=http://sensor-service:5002/actuator
       - CATALOGUE_API_URL=http://catalogue-service:5000
       - SENSOR_DATA_API_URL=http://sensor-data-service:5004
+      - INFLUXDB_URL=http://influxdb:8086
+      - INFLUXDB_TOKEN=dev-influx-token-123
+      - INFLUXDB_ORG=smart_plant_care
+      - INFLUXDB_BUCKET=sensor_data
     restart: unless-stopped
     depends_on:
       - database-init

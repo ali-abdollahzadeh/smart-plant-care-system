@@ -483,6 +483,68 @@ def assign_user_to_plant():
             VALUES (%s, %s, NOW())
         """, (user_id, plant_id))
 
+        # Ensure a per-user device exists for this plant
+        try:
+            # Build a friendly device name
+            plant_row = execute_query("SELECT name, species FROM plants WHERE id = %s", (plant_id,))
+            plant_name = plant_row[0]['name'] if plant_row else 'Plant'
+            plant_species = plant_row[0].get('species') if plant_row else None
+            device_name = f"{plant_name} sensor"
+            device_type = 'sensor'
+            device_config = json.dumps({
+                'plant_id': plant_id,
+                'plant_species': plant_species,
+                'capabilities': ['temperature', 'humidity', 'soil_moisture']
+            })
+
+            # Upsert-like behavior: if a device with same user_id and plant_id exists, skip
+            exists = execute_query(
+                "SELECT id FROM devices WHERE user_id = %s AND plant_id = %s",
+                (user_id, plant_id)
+            )
+            if not exists:
+                execute_query(
+                    """
+                    INSERT INTO devices (name, type, config, user_id, plant_id)
+                    VALUES (%s, %s, %s, %s, %s)
+                    """,
+                    (device_name, device_type, device_config, user_id, plant_id)
+                )
+        except Exception as e:
+            logger.warning(f"Failed to create per-user device for plant {plant_id}: {e}")
+
+        # Publish MQTT assignment notification
+        try:
+            import paho.mqtt.client as mqtt
+            import time
+            
+            # Get plant and user details for notification
+            plant_details = execute_query("SELECT name, species FROM plants WHERE id = %s", (plant_id,))
+            user_details = execute_query("SELECT username, telegram_id FROM users WHERE id = %s", (user_id,))
+            
+            if plant_details and user_details:
+                plant_name = plant_details[0]['name']
+                user_telegram_id = user_details[0].get('telegram_id')
+                
+                assignment_msg = {
+                    "type": "plant_assigned",
+                    "plant_id": plant_id,
+                    "user_id": user_id,
+                    "plant_name": plant_name,
+                    "telegram_id": user_telegram_id,
+                    "timestamp": time.time()
+                }
+                
+                # Publish to MQTT
+                client = mqtt.Client()
+                client.connect("mqtt-broker", 1883, 60)
+                client.publish("plant/assignments", json.dumps(assignment_msg))
+                client.disconnect()
+                
+                logger.info(f"Published assignment notification for plant {plant_id} to user {user_id}")
+        except Exception as e:
+            logger.warning(f"Could not publish MQTT assignment notification: {e}")
+
         return jsonify({'message': 'Assigned', 'plant_id': plant_id, 'user_id': user_id}), 201
     except Exception as e:
         logger.error(f"Assignment failed: {e}")

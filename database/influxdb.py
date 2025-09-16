@@ -40,7 +40,7 @@ def _init_influxdb_client():
     try:
         # Get configuration from environment
         url = os.environ.get('INFLUXDB_URL', 'http://influxdb:8086')
-        token = os.environ.get('INFLUXDB_TOKEN', 'bFfgCm1QSnKYZDIi_6OQr-lJKhRYDNOapiXKjO9pbdUM2FWmsUNpTeWgBeUmjtvVYycWuxHLkg6QuStmadOegg==')
+        token = os.environ.get('INFLUXDB_TOKEN') or os.environ.get('DOCKER_INFLUXDB_INIT_ADMIN_TOKEN') or 'dev-influx-token-123'
         org = os.environ.get('INFLUXDB_ORG', 'smart_plant_care')
 
         logger.info(f"Initializing InfluxDB client to {url}")
