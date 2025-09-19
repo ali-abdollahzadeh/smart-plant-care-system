@@ -1,0 +1,154 @@
+[
+    {
+        "id": "b2feebbb21091c3d",
+        "type": "tab",
+        "label": "Smart Plant Monitor",
+        "disabled": false,
+        "info": "",
+        "env": []
+    },
+    {
+        "id": "mqtt_broker",
+        "type": "mqtt-broker",
+        "name": "MQTT Broker",
+        "broker": "mqtt-broker",
+        "port": "1883",
+        "clientid": "",
+        "autoConnect": true,
+        "usetls": false,
+        "protocolVersion": "4",
+        "keepalive": "60",
+        "cleansession": true
+    },
+    {
+        "id": "dashboard_group",
+        "type": "ui_group",
+        "name": "Plant Dashboard",
+        "tab": "dashboard_tab",
+        "order": 1,
+        "disp": true,
+        "width": "12",
+        "collapse": false
+    },
+    {
+        "id": "dashboard_tab",
+        "type": "ui_tab",
+        "name": "Smart Plant Care",
+        "icon": "dashboard",
+        "order": 1
+    },
+    {
+        "id": "58990b90cb22d069",
+        "type": "mqtt in",
+        "z": "b2feebbb21091c3d",
+        "name": "Sensor Data",
+        "topic": "smartplant/+/telemetry",
+        "qos": "2",
+        "datatype": "json",
+        "broker": "mqtt_broker",
+        "nl": false,
+        "rap": true,
+        "rh": 0,
+        "x": 140,
+        "y": 80,
+        "wires": [
+            [
+                "ba1aabd4d3cd69b2"
+            ]
+        ]
+    },
+    {
+        "id": "ba1aabd4d3cd69b2",
+        "type": "ui_chart",
+        "z": "b2feebbb21091c3d",
+        "name": "Live Telemetry",
+        "group": "dashboard_group",
+        "order": 0,
+        "width": "12",
+        "height": "6",
+        "label": "Live Sensors",
+        "chartType": "line",
+        "legend": "true",
+        "xformat": "HH:mm:ss",
+        "interpolate": "linear",
+        "nodata": "",
+        "dot": false,
+        "ymin": "0",
+        "ymax": "",
+        "removeOlder": "60",
+        "removeOlderPoints": "",
+        "removeOlderUnit": "60",
+        "cutout": 0,
+        "useOneColor": false,
+        "colors": [
+            "#1f77b4",
+            "#ff7f0e",
+            "#2ca02c",
+            "#d62728"
+        ],
+        "outputs": 1,
+        "useOldStyle": false,
+        "x": 380,
+        "y": 80,
+        "wires": []
+    },
+    {
+        "id": "3bfc3425aaa34936",
+        "type": "inject",
+        "z": "b2feebbb21091c3d",
+        "name": "Refresh Alerts",
+        "props": [
+            {
+                "p": "payload"
+            }
+        ],
+        "repeat": "60",
+        "once": true,
+        "onceDelay": 0.1,
+        "topic": "",
+        "payloadType": "date",
+        "x": 120,
+        "y": 300,
+        "wires": [
+            [
+                "69be1d70cfa7483e"
+            ]
+        ]
+    },
+    {
+        "id": "69be1d70cfa7483e",
+        "type": "http request",
+        "z": "b2feebbb21091c3d",
+        "name": "Get Alerts",
+        "method": "GET",
+        "ret": "obj",
+        "paytoqs": "ignore",
+        "url": "http://catalogue-service:8000/alerts?plant_id=1",
+        "persist": false,
+        "authType": "",
+        "x": 320,
+        "y": 300,
+        "wires": [
+            [
+                "3472bd32d7fe4517"
+            ]
+        ]
+    },
+    {
+        "id": "3472bd32d7fe4517",
+        "type": "ui_template",
+        "z": "b2feebbb21091c3d",
+        "group": "dashboard_group",
+        "name": "Alerts Table",
+        "order": 5,
+        "width": "12",
+        "height": "6",
+        "format": "<table style='width:100%'><tr><th>Sensor</th><th>Value</th><th>Timestamp</th><th>Note</th></tr><tr ng-repeat='alert in msg.payload'><td>{{alert.sensor}}</td><td>{{alert.value}}</td><td>{{alert.ts}}</td><td>{{alert.note}}</td></tr></table>",
+        "templateScope": "local",
+        "x": 560,
+        "y": 300,
+        "wires": [
+            []
+        ]
+    }
+]

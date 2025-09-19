@@ -1,10 +1,14 @@
-FROM python:3.10-slim
+FROM python:3.11-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      build-essential gcc libpq-dev && \
+    rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
-COPY database/requirements.txt ./database-requirements.txt
-COPY services/catalogue-service/requirements.txt .
-RUN pip install --no-cache-dir -r database-requirements.txt
+COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-COPY database/ ./database/
-COPY services/catalogue-service/ .
-EXPOSE 5000
-CMD ["python", "main.py"]
+
+COPY src/ /app/src/
+ENV PYTHONPATH=/app
+
+CMD ["uvicorn", "src.app:app", "--host", "0.0.0.0", "--port", "8000"]

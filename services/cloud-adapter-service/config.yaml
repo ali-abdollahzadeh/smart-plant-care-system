@@ -1,8 +1,0 @@
-mqtt:
-  broker_url: "mqtt-broker"
-  port: 1883
-  publish_topic: "plant/sensor"
-  subscribe_topic: "plant/commands"
-  command_topic: "plant/command"  # Actuator control (manual, Telegram, automated)
-  data_format: "json"
-

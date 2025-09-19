@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+
+{% block title %}Users - Smart Plant Care System{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-4">
+    <div class="row">
+        <div class="col-12">
+            <h1><i class="fas fa-users"></i> Users</h1>
+            <p class="text-muted">Manage users and their plant assignments</p>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">Registered Users</h5>
+                </div>
+                <div class="card-body">
+                    {% if users %}
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Name</th>
+                                    <th>Telegram Chat ID</th>
+                                    <th>Created</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for user_id, user in users.items() %}
+                                <tr>
+                                    <td>{{ user.id }}</td>
+                                    <td>
+                                        <i class="fas fa-user"></i> {{ user.name }}
+                                    </td>
+                                    <td>
+                                        {% if user.chat_id %}
+                                            <span class="badge bg-info">{{ user.chat_id }}</span>
+                                        {% else %}
+                                            <span class="text-muted">Not set</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>{{ user.created_at[:10] if user.created_at else 'Unknown' }}</td>
+                                    <td>
+                                        <button class="btn btn-sm btn-outline-primary" onclick="assignPlant({{ user.id }})">
+                                            <i class="fas fa-link"></i> Assign Plant
+                                        </button>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <div class="text-center py-5">
+                        <i class="fas fa-users fa-3x text-muted mb-3"></i>
+                        <h3 class="text-muted">No Users Found</h3>
+                        <p class="text-muted">Users will appear here when they interact with the Telegram bot</p>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Assign Plant Modal -->
+<div class="modal fade" id="assignModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Assign Plant to User</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="assignForm">
+                    <input type="hidden" id="assignUserId" name="user_id">
+                    <div class="mb-3">
+                        <label for="assignPlantId" class="form-label">Select Plant</label>
+                        <select class="form-select" id="assignPlantId" name="plant_id" required>
+                            <option value="">Choose a plant...</option>
+                            {% for plant_id, plant in plants.items() %}
+                            <option value="{{ plant_id }}">{{ plant.name }} ({{ plant.type or 'Plant' }})</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="confirmAssign()">Assign Plant</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function assignPlant(userId) {
+    document.getElementById('assignUserId').value = userId;
+    const modal = new bootstrap.Modal(document.getElementById('assignModal'));
+    modal.show();
+}
+
+function confirmAssign() {
+    const form = document.getElementById('assignForm');
+    const formData = new FormData(form);
+    const data = Object.fromEntries(formData);
+    
+    fetch('/api/assign_user', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(data)
+    })
+    .then(response => response.json())
+    .then(result => {
+        if (result.status === 'success') {
+            alert('Plant assigned successfully!');
+            bootstrap.Modal.getInstance(document.getElementById('assignModal')).hide();
+            location.reload();
+        } else {
+            alert('Error: ' + result.message);
+        }
+    })
+    .catch(error => {
+        alert('Error: ' + error);
+    });
+}
+</script>
+{% endblock %}

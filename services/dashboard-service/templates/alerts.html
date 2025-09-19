@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+
+{% block title %}Alerts - Smart Plant Care System{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-4">
+    <div class="row">
+        <div class="col-12">
+            <h1><i class="fas fa-bell"></i> Alerts</h1>
+            <p class="text-muted">Monitor plant alerts and notifications</p>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">Recent Alerts</h5>
+                </div>
+                <div class="card-body">
+                    {% if alerts %}
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Plant</th>
+                                    <th>Sensor</th>
+                                    <th>Value</th>
+                                    <th>Severity</th>
+                                    <th>Note</th>
+                                    <th>Time</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for alert_id, alert in alerts.items() %}
+                                <tr>
+                                    <td>
+                                        {% if alert.plant_id in plants %}
+                                            <i class="fas fa-leaf"></i> {{ plants[alert.plant_id].name }}
+                                        {% else %}
+                                            Plant {{ alert.plant_id }}
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        <span class="badge bg-info">
+                                            {% if alert.sensor == 'temperature' %}
+                                                <i class="fas fa-thermometer-half"></i> Temperature
+                                            {% elif alert.sensor == 'humidity' %}
+                                                <i class="fas fa-tint"></i> Humidity
+                                            {% elif alert.sensor == 'soil_moisture' %}
+                                                <i class="fas fa-seedling"></i> Soil Moisture
+                                            {% else %}
+                                                {{ alert.sensor }}
+                                            {% endif %}
+                                        </span>
+                                    </td>
+                                    <td>
+                                        <span class="fw-bold">{{ alert.value }}</span>
+                                        {% if alert.sensor == 'temperature' %}
+                                            <small class="text-muted">°C</small>
+                                        {% elif alert.sensor in ['humidity', 'soil_moisture'] %}
+                                            <small class="text-muted">%</small>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        <span class="badge bg-{{ 'warning' if alert.severity == 'warning' else 'danger' }}">
+                                            <i class="fas fa-exclamation-triangle"></i> {{ alert.severity.title() }}
+                                        </span>
+                                    </td>
+                                    <td>
+                                        {% if alert.note %}
+                                            <span class="text-muted">{{ alert.note }}</span>
+                                        {% else %}
+                                            <span class="text-muted">-</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        <small class="text-muted">{{ alert.ts[:19] if alert.ts else 'Unknown' }}</small>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <div class="text-center py-5">
+                        <i class="fas fa-bell fa-3x text-muted mb-3"></i>
+                        <h3 class="text-muted">No Alerts Found</h3>
+                        <p class="text-muted">Alerts will appear here when plant conditions exceed thresholds</p>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+
+{% block title %}Add New Threshold - Smart Plant Care System{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="row justify-content-center">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header bg-success text-white">
+                    <h5 class="card-title mb-0">
+                        <i class="fas fa-plus"></i> Add New Threshold
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <form method="POST">
+                        <div class="mb-3">
+                            <label for="plant_id" class="form-label">Plant *</label>
+                            <select class="form-select" id="plant_id" name="plant_id" required>
+                                <option value="">Select a plant...</option>
+                                {% for plant_id, plant in plants.items() %}
+                                <option value="{{ plant_id }}">{{ plant.name }} ({{ plant.type or 'Plant' }})</option>
+                                {% endfor %}
+                            </select>
+                            <div class="form-text">Choose which plant this threshold applies to</div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="sensor" class="form-label">Sensor Type *</label>
+                            <select class="form-select" id="sensor" name="sensor" required>
+                                <option value="">Select sensor type...</option>
+                                <option value="temperature">Temperature (°C)</option>
+                                <option value="humidity">Humidity (%)</option>
+                                <option value="soil_moisture">Soil Moisture (%)</option>
+                            </select>
+                        </div>
+                        
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="min_val" class="form-label">Minimum Value</label>
+                                    <input type="number" class="form-control" id="min_val" name="min_val" step="0.1">
+                                    <div class="form-text">Leave empty if no minimum threshold</div>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="max_val" class="form-label">Maximum Value</label>
+                                    <input type="number" class="form-control" id="max_val" name="max_val" step="0.1">
+                                    <div class="form-text">Leave empty if no maximum threshold</div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="hysteresis" class="form-label">Hysteresis</label>
+                            <input type="number" class="form-control" id="hysteresis" name="hysteresis" value="0.0" step="0.1" min="0">
+                            <div class="form-text">Prevents alert flapping (recommended: 1-5% of range)</div>
+                        </div>
+                        
+                        <div class="d-grid gap-2">
+                            <button type="submit" class="btn btn-success">
+                                <i class="fas fa-save"></i> Create Threshold
+                            </button>
+                            <a href="{{ url_for('thresholds') }}" class="btn btn-outline-secondary">
+                                <i class="fas fa-arrow-left"></i> Back to Thresholds
+                            </a>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
