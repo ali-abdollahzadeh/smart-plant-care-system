@@ -1,0 +1,209 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - Smart Plant Care System{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-4">
+    <div class="row">
+        <div class="col-12">
+            <h1><i class="fas fa-tachometer-alt"></i> Plant Dashboard</h1>
+            <p class="text-muted">Monitor your plants in real-time</p>
+        </div>
+    </div>
+
+    <!-- Plant Cards -->
+    <div class="row">
+        {% for plant_id, plant in plants.items() %}
+        <div class="col-md-6 col-lg-4 mb-4">
+            <div class="card sensor-card">
+                <div class="card-header bg-success text-white">
+                    <h5 class="card-title mb-0">
+                        <i class="fas fa-leaf"></i> {{ plant.name }}
+                        <span class="badge bg-light text-dark ms-2">{{ plant.type or 'Plant' }}</span>
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <!-- Temperature -->
+                    <div class="row mb-2">
+                        <div class="col-6">
+                            <i class="fas fa-thermometer-half text-danger"></i>
+                            <strong>Temperature</strong>
+                        </div>
+                        <div class="col-6 text-end">
+                            <span id="sensor-{{ plant_id }}-temperature" class="fw-bold">
+                                {{ latest_sensor_data.get(plant_id, {}).get('temperature', {}).get('value', 'N/A') }}
+                            </span>
+                            <small class="text-muted">°C</small>
+                        </div>
+                    </div>
+
+                    <!-- Humidity -->
+                    <div class="row mb-2">
+                        <div class="col-6">
+                            <i class="fas fa-tint text-info"></i>
+                            <strong>Humidity</strong>
+                        </div>
+                        <div class="col-6 text-end">
+                            <span id="sensor-{{ plant_id }}-humidity" class="fw-bold">
+                                {{ latest_sensor_data.get(plant_id, {}).get('humidity', {}).get('value', 'N/A') }}
+                            </span>
+                            <small class="text-muted">%</small>
+                        </div>
+                    </div>
+
+                    <!-- Soil Moisture -->
+                    <div class="row mb-3">
+                        <div class="col-6">
+                            <i class="fas fa-seedling text-warning"></i>
+                            <strong>Soil Moisture</strong>
+                        </div>
+                        <div class="col-6 text-end">
+                            <span id="sensor-{{ plant_id }}-soil_moisture" class="fw-bold">
+                                {{ latest_sensor_data.get(plant_id, {}).get('soil_moisture', {}).get('value', 'N/A') }}
+                            </span>
+                            <small class="text-muted">%</small>
+                        </div>
+                    </div>
+
+                    <!-- Actions -->
+                    <div class="d-grid gap-2">
+                        <button class="btn btn-outline-primary btn-sm" onclick="waterPlant({{ plant_id }})">
+                            <i class="fas fa-tint"></i> Water Plant
+                        </button>
+                        <button class="btn btn-outline-secondary btn-sm" onclick="viewPlantDetails({{ plant_id }})">
+                            <i class="fas fa-info-circle"></i> View Details
+                        </button>
+                    </div>
+                </div>
+                <div class="card-footer text-muted">
+                    <small>
+                        <i class="fas fa-clock"></i>
+                        Last updated: 
+                        <span id="last-update-{{ plant_id }}">
+                            {{ latest_sensor_data.get(plant_id, {}).get('temperature', {}).get('timestamp', 'Never') }}
+                        </span>
+                    </small>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <!-- Recent Alerts -->
+    {% if alerts %}
+    <div class="row mt-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">
+                        <i class="fas fa-bell"></i> Recent Alerts
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-sm">
+                            <thead>
+                                <tr>
+                                    <th>Plant</th>
+                                    <th>Sensor</th>
+                                    <th>Value</th>
+                                    <th>Severity</th>
+                                    <th>Time</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for alert_id, alert in alerts.items() %}
+                                <tr>
+                                    <td>
+                                        {% if alert.plant_id in plants %}
+                                            {{ plants[alert.plant_id].name }}
+                                        {% else %}
+                                            Plant {{ alert.plant_id }}
+                                        {% endif %}
+                                    </td>
+                                    <td>{{ alert.sensor }}</td>
+                                    <td>{{ alert.value }}</td>
+                                    <td>
+                                        <span class="badge bg-{{ 'warning' if alert.severity == 'warning' else 'danger' }}">
+                                            {{ alert.severity }}
+                                        </span>
+                                    </td>
+                                    <td>{{ alert.ts }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Water Plant Modal -->
+<div class="modal fade" id="waterModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Water Plant</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="waterForm">
+                    <input type="hidden" id="waterPlantId" name="plant_id">
+                    <div class="mb-3">
+                        <label for="waterAmount" class="form-label">Water Amount (ml)</label>
+                        <input type="number" class="form-control" id="waterAmount" name="amount" value="200" min="50" max="1000">
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="confirmWater()">Water Plant</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function waterPlant(plantId) {
+    document.getElementById('waterPlantId').value = plantId;
+    const modal = new bootstrap.Modal(document.getElementById('waterModal'));
+    modal.show();
+}
+
+function confirmWater() {
+    const form = document.getElementById('waterForm');
+    const formData = new FormData(form);
+    const data = Object.fromEntries(formData);
+    
+    fetch('/api/water_plant', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(data)
+    })
+    .then(response => response.json())
+    .then(result => {
+        if (result.status === 'success') {
+            alert('Watering command sent successfully!');
+            bootstrap.Modal.getInstance(document.getElementById('waterModal')).hide();
+        } else {
+            alert('Error: ' + result.message);
+        }
+    })
+    .catch(error => {
+        alert('Error: ' + error);
+    });
+}
+
+function viewPlantDetails(plantId) {
+    // Redirect to plant details page or show modal
+    window.location.href = '/plants/' + plantId;
+}
+</script>
+{% endblock %}

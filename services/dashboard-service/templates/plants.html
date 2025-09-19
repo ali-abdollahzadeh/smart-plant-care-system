@@ -1,0 +1,153 @@
+{% extends "base.html" %}
+
+{% block title %}Plants - Smart Plant Care System{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-4">
+    <div class="row">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h1><i class="fas fa-leaf"></i> Plants</h1>
+                <a href="{{ url_for('new_plant') }}" class="btn btn-success">
+                    <i class="fas fa-plus"></i> Add New Plant
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        {% for plant_id, plant in plants.items() %}
+        <div class="col-md-6 col-lg-4 mb-4">
+            <div class="card">
+                <div class="card-header bg-success text-white">
+                    <h5 class="card-title mb-0">
+                        <i class="fas fa-leaf"></i> {{ plant.name }}
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <p class="card-text">
+                        <strong>Type:</strong> {{ plant.type or 'Not specified' }}<br>
+                        <strong>Created:</strong> {{ plant.created_at[:10] if plant.created_at else 'Unknown' }}
+                    </p>
+                    
+                    <!-- Current Sensor Data -->
+                    <div class="mb-3">
+                        <h6>Current Status:</h6>
+                        <div class="row">
+                            <div class="col-4 text-center">
+                                <small class="text-muted">Temperature</small><br>
+                                <span class="fw-bold">
+                                    {{ latest_sensor_data.get(plant_id, {}).get('temperature', {}).get('value', 'N/A') }}°C
+                                </span>
+                            </div>
+                            <div class="col-4 text-center">
+                                <small class="text-muted">Humidity</small><br>
+                                <span class="fw-bold">
+                                    {{ latest_sensor_data.get(plant_id, {}).get('humidity', {}).get('value', 'N/A') }}%
+                                </span>
+                            </div>
+                            <div class="col-4 text-center">
+                                <small class="text-muted">Soil</small><br>
+                                <span class="fw-bold">
+                                    {{ latest_sensor_data.get(plant_id, {}).get('soil_moisture', {}).get('value', 'N/A') }}%
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Actions -->
+                    <div class="d-grid gap-2">
+                        <button class="btn btn-outline-primary btn-sm" onclick="waterPlant({{ plant_id }})">
+                            <i class="fas fa-tint"></i> Water Plant
+                        </button>
+                        <button class="btn btn-outline-secondary btn-sm" onclick="viewThresholds({{ plant_id }})">
+                            <i class="fas fa-cog"></i> Manage Thresholds
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    {% if not plants %}
+    <div class="row">
+        <div class="col-12">
+            <div class="text-center py-5">
+                <i class="fas fa-leaf fa-3x text-muted mb-3"></i>
+                <h3 class="text-muted">No Plants Found</h3>
+                <p class="text-muted">Get started by adding your first plant!</p>
+                <a href="{{ url_for('new_plant') }}" class="btn btn-success">
+                    <i class="fas fa-plus"></i> Add Your First Plant
+                </a>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Water Plant Modal -->
+<div class="modal fade" id="waterModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Water Plant</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="waterForm">
+                    <input type="hidden" id="waterPlantId" name="plant_id">
+                    <div class="mb-3">
+                        <label for="waterAmount" class="form-label">Water Amount (ml)</label>
+                        <input type="number" class="form-control" id="waterAmount" name="amount" value="200" min="50" max="1000">
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="confirmWater()">Water Plant</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function waterPlant(plantId) {
+    document.getElementById('waterPlantId').value = plantId;
+    const modal = new bootstrap.Modal(document.getElementById('waterModal'));
+    modal.show();
+}
+
+function confirmWater() {
+    const form = document.getElementById('waterForm');
+    const formData = new FormData(form);
+    const data = Object.fromEntries(formData);
+    
+    fetch('/api/water_plant', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(data)
+    })
+    .then(response => response.json())
+    .then(result => {
+        if (result.status === 'success') {
+            alert('Watering command sent successfully!');
+            bootstrap.Modal.getInstance(document.getElementById('waterModal')).hide();
+        } else {
+            alert('Error: ' + result.message);
+        }
+    })
+    .catch(error => {
+        alert('Error: ' + error);
+    });
+}
+
+function viewThresholds(plantId) {
+    window.location.href = '/thresholds?plant_id=' + plantId;
+}
+</script>
+{% endblock %}
