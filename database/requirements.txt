@@ -1,2 +1,0 @@
-psycopg2-binary==2.9.7
-influxdb-client==1.38.0
